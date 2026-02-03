@@ -100,71 +100,81 @@ func runProcess() {
 	// Determine steps
 	stepNames := pipeline.ResolveSteps(nil, workflow)
 
-	// Create TUI model
-	model := tui.NewModel(stepNames, statusChan)
-	p := tea.NewProgram(model)
+	// Initialize Dependencies
+	// TODO: This should ideally be dependent on flags/config, potentially mocking interfaces if dry-run
+	// But for now we try real clients if env vars exist
 
-	// Run pipeline in a goroutine
-	go func() {
-		// Initialize Dependencies
-		// TODO: This should ideally be dependent on flags/config, potentially mocking interfaces if dry-run
-		// But for now we try real clients if env vars exist
+	// This is a simplified dependency setup for the CLI context
+	deps := &pipeline.Dependencies{
+		DryRun: dryRun,
+	}
 
-		// This is a simplified dependency setup for the CLI context
-		deps := &pipeline.Dependencies{
-			DryRun: dryRun,
-		}
-
-		// Initialize clients with error logging
-		// Embedder
-		if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
-			embedder, err := gemini.NewEmbedder(apiKey)
-			if err == nil {
-				deps.Embedder = embedder
-			} else {
-				fmt.Printf("Warning: Failed to initialize Gemini embedder: %v\n", err)
-			}
-		}
-
-		// Vector Store
-		// Check for Qdrant env vars or config
-		qURL := cfg.Qdrant.URL
-		if qURL == "" {
-			qURL = "localhost:6334" // Default
-		}
-		qKey := cfg.Qdrant.APIKey
-
-		qdrantClient, err := qdrant.NewClient(qURL, qKey)
+	// Initialize clients with error logging
+	// Embedder
+	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
+		embedder, err := gemini.NewEmbedder(apiKey)
 		if err == nil {
-			deps.VectorStore = qdrantClient
+			deps.Embedder = embedder
 		} else {
-			fmt.Printf("Warning: Failed to initialize Qdrant client: %v\n", err)
+			fmt.Printf("Warning: Failed to initialize Gemini embedder: %v\n", err)
 		}
+	}
 
-		// GitHub Client
-		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-			ghClient := github.NewClient(context.Background(), token)
-			deps.GitHub = ghClient
+	// Vector Store
+	// Check for Qdrant env vars or config
+	qURL := cfg.Qdrant.URL
+	if qURL == "" {
+		qURL = "localhost:6334" // Default
+	}
+	qKey := cfg.Qdrant.APIKey
+
+	qdrantClient, err := qdrant.NewClient(qURL, qKey)
+	if err == nil {
+		deps.VectorStore = qdrantClient
+	} else {
+		fmt.Printf("Warning: Failed to initialize Qdrant client: %v\n", err)
+	}
+
+	// GitHub Client
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		ghClient := github.NewClient(context.Background(), token)
+		deps.GitHub = ghClient
+	}
+
+	// LLM Client
+	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
+		llm, err := gemini.NewLLMClient(apiKey)
+		if err == nil {
+			deps.LLMClient = llm
+		} else {
+			fmt.Printf("Warning: Failed to initialize Gemini LLM client: %v\n", err)
 		}
+	}
 
-		// LLM Client
-		if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
-			llm, err := gemini.NewLLMClient(apiKey)
-			if err == nil {
-				deps.LLMClient = llm
-			} else {
-				fmt.Printf("Warning: Failed to initialize Gemini LLM client: %v\n", err)
-			}
+	defer deps.Close()
+
+	// Check if running in CI/non-interactive environment
+	isCI := os.Getenv("CI") == "true" || os.Getenv("GITHUB_ACTIONS") == "true"
+
+	if isCI {
+		// Run pipeline directly without TUI in CI environments
+		fmt.Println("[Simili-Bot] Running in CI mode (no TUI)")
+		runPipeline(nil, deps, stepNames, &issue, cfg, statusChan)
+		fmt.Println("[Simili-Bot] Pipeline completed")
+	} else {
+		// Create TUI model for interactive mode
+		model := tui.NewModel(stepNames, statusChan)
+		p := tea.NewProgram(model)
+
+		// Run pipeline in a goroutine
+		go func() {
+			// Start processing
+			runPipeline(p, deps, stepNames, &issue, cfg, statusChan)
+		}()
+
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error running TUI: %v\n", err)
+			os.Exit(1)
 		}
-
-		defer deps.Close()
-
-		// Start processing
-		runPipeline(p, deps, stepNames, &issue, cfg, statusChan)
-	}()
-
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error running TUI: %v\n", err)
-		os.Exit(1)
 	}
 }
