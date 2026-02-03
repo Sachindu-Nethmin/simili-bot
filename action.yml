@@ -1,0 +1,46 @@
+name: 'Simili - Issue Intelligence'
+description: 'AI-powered duplicate detection and similar issue finder with cross-repo search.'
+author: 'Kavirubc'
+branding:
+  icon: 'search'
+  color: 'purple'
+
+inputs:
+  command:
+    description: 'Command to run (process, index, etc.)'
+    required: false
+    default: 'process'
+  config_path:
+    description: 'Path to the simili configuration file'
+    required: false
+    default: '.github/simili.yaml'
+  dry_run:
+    description: 'Run in read-only mode'
+    required: false
+    default: 'false'
+  github_token:
+    description: 'GitHub token'
+    required: false
+    default: ${{ github.token }}
+  transfer_token:
+    description: 'GitHub token with elevated permissions for transfers'
+    required: false
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.command }}
+    - --issue
+    - /github/workflow/event.json
+    - --config
+    - ${{ inputs.config_path }}
+    - ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+##    - --verbose # Optional, consistent with previous behavior?
+
+  env:
+    GITHUB_TOKEN: ${{ inputs.github_token }}
+    TRANSFER_TOKEN: ${{ inputs.transfer_token }}
+    # Pass other env vars if needed, like GEMINI_API_KEY, but user usually sets them in workflow `env`
+    # Docker actions inherit `env` set in the workflow step? 
+    # Actually, args are passed, but environment variables declared in workflow `env:` key ARE passed to the container.
