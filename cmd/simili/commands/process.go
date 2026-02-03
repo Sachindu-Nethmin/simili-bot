@@ -116,9 +116,40 @@ func runProcess() {
 			fmt.Printf("Error reading issue file: %v\n", err)
 			os.Exit(1)
 		}
+
+		// Attempt to unmarshal directly
 		if err := json.Unmarshal(data, &issue); err != nil {
 			fmt.Printf("Error parsing issue JSON: %v\n", err)
 			os.Exit(1)
+		}
+
+		// Check if keys were populated. If not, this might be a raw GitHub event.
+		// GitHub events are complex and nested. pipeline.Issue is likely flat.
+		// We need to extract what we can.
+		if issue.Number == 0 {
+			// Try parsing as generic map to check structure
+			var raw map[string]interface{}
+			if err := json.Unmarshal(data, &raw); err == nil {
+				// Check for 'issue' key (issue events)
+				if iss, ok := raw["issue"].(map[string]interface{}); ok {
+					if num, ok := iss["number"].(float64); ok {
+						issue.Number = int(num)
+					}
+					if title, ok := iss["title"].(string); ok {
+						issue.Title = title
+					}
+					if body, ok := iss["body"].(string); ok {
+						issue.Body = body
+					}
+				}
+				// Also check 'pull_request' if needed, or 'comment'
+				if issue.Number == 0 {
+					// Maybe it's at root (if stripped)?
+					if num, ok := raw["number"].(float64); ok {
+						issue.Number = int(num)
+					}
+				}
+			}
 		}
 	} else {
 		// TODO: Fetch from GitHub if not provided (Phase 9/10)
@@ -133,8 +164,37 @@ func runProcess() {
 	if repoName != "" {
 		issue.Repo = repoName
 	}
+	// Fallback to Env Vars if valid and still empty
+	if issue.Org == "" || issue.Repo == "" {
+		if ghRepo := os.Getenv("GITHUB_REPOSITORY"); ghRepo != "" {
+			// owner/repo
+			// We need to import strings to split safely
+			// Since I can't guarantee imports easily without seeing file imports,
+			// I'll assume simple looping or add imports in a separate step if needed.
+			// Actually process.go doesn't import strings yet.
+			// Let's rely on standard split logic or just add the import.
+			// I'll add "strings" to imports in a separate step to be safe.
+			// For now, let's just do a manual scan
+			for i := 0; i < len(ghRepo); i++ {
+				if ghRepo[i] == '/' {
+					if issue.Org == "" {
+						issue.Org = ghRepo[:i]
+					}
+					if issue.Repo == "" {
+						issue.Repo = ghRepo[i+1:]
+					}
+					break
+				}
+			}
+		}
+	}
+
 	if issueNum != 0 {
 		issue.Number = issueNum
+	}
+
+	if verbose {
+		fmt.Printf("Processing Issue: %s/%s #%d\n", issue.Org, issue.Repo, issue.Number)
 	}
 
 	// Determine steps
