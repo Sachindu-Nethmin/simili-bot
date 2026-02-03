@@ -219,6 +219,23 @@ func runProcess() {
 	if isCI {
 		// Run pipeline directly without TUI in CI environments
 		fmt.Println("[Simili-Bot] Running in CI mode (no TUI)")
+
+		// Start a goroutine to consume status updates and print them
+		go func() {
+			for msg := range statusChan {
+				switch msg.Status {
+				case "error":
+					fmt.Printf("❌ [%s] %s\n", msg.Step, msg.Message)
+				case "success":
+					fmt.Printf("✅ [%s] %s\n", msg.Step, msg.Message)
+				case "started":
+					fmt.Printf("🔄 [%s] %s\n", msg.Step, msg.Message)
+				case "skipped":
+					fmt.Printf("⏭️ [%s] %s\n", msg.Step, msg.Message)
+				}
+			}
+		}()
+
 		runPipeline(nil, deps, stepNames, &issue, cfg, statusChan)
 		fmt.Println("[Simili-Bot] Pipeline completed")
 	} else {
