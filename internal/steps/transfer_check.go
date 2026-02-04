@@ -40,6 +40,8 @@ func (s *TransferCheck) Run(ctx *pipeline.Context) error {
 		return nil
 	}
 
+	blockedTargets, _ := ctx.Metadata["blocked_targets"].([]string)
+
 	log.Printf("[transfer_check] Checking transfer rules for issue #%d", ctx.Issue.Number)
 
 	// Create the rule matcher
@@ -56,6 +58,20 @@ func (s *TransferCheck) Run(ctx *pipeline.Context) error {
 	// Evaluate rules
 	result := matcher.Match(input)
 	if result.Matched {
+		// Check if target is blocked (loop prevention)
+		isBlocked := false
+		for _, blocked := range blockedTargets {
+			if blocked == result.Target {
+				isBlocked = true
+				break
+			}
+		}
+
+		if isBlocked {
+			log.Printf("[transfer_check] Skipping transfer to %s: detected loop (blocked target)", result.Target)
+			return nil
+		}
+
 		log.Printf("[transfer_check] Issue #%d matched rule '%s', target: %s",
 			ctx.Issue.Number, result.Rule.Name, result.Target)
 
