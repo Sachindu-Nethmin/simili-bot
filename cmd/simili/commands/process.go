@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -157,6 +158,11 @@ func runProcess() {
 					if user, ok := iss["user"].(map[string]interface{}); ok {
 						if login, ok := user["login"].(string); ok {
 							issue.Author = login
+						}
+					}
+					if createdAt, ok := iss["created_at"].(string); ok {
+						if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+							issue.CreatedAt = t
 						}
 					}
 				}

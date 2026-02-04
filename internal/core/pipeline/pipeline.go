@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/similigh/simili-bot/internal/core/config"
 )
@@ -41,8 +42,9 @@ type Issue struct {
 	Labels        []string
 	Author        string
 	URL           string
-	EventType     string // "issues" or "issue_comment"
-	EventAction   string // "opened", "edited", "transferred", "closed", etc.
+	CreatedAt     time.Time // When the issue was created
+	EventType     string    // "issues" or "issue_comment"
+	EventAction   string    // "opened", "edited", "transferred", "closed", etc.
 	CommentBody   string
 	CommentAuthor string
 }

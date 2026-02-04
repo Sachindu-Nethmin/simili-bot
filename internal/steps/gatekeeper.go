@@ -9,6 +9,7 @@ package steps
 
 import (
 	"log"
+	"time"
 
 	"github.com/similigh/simili-bot/internal/core/config"
 	"github.com/similigh/simili-bot/internal/core/pipeline"
@@ -39,6 +40,20 @@ func (s *Gatekeeper) Run(ctx *pipeline.Context) error {
 		ctx.Result.Skipped = true
 		ctx.Result.SkipReason = "transferred from another repository"
 		return pipeline.ErrSkipPipeline
+	}
+
+	// WORKAROUND: GitHub sends action="opened" to destination repo, not "transferred"
+	// Skip "opened" events for issues created within the last 2 minutes
+	// This prevents re-triaging freshly transferred issues
+	if ctx.Issue.EventAction == "opened" && !ctx.Issue.CreatedAt.IsZero() {
+		age := time.Since(ctx.Issue.CreatedAt)
+		if age < 2*time.Minute {
+			log.Printf("[gatekeeper] Issue #%d was just created (%v ago), likely transferred, skipping triage",
+				ctx.Issue.Number, age.Round(time.Second))
+			ctx.Result.Skipped = true
+			ctx.Result.SkipReason = "recently created issue (likely transferred)"
+			return pipeline.ErrSkipPipeline
+		}
 	}
 
 	// If repositories list is empty, allow all (single-repo mode)
