@@ -1,6 +1,6 @@
 FROM golang:1.24-alpine AS builder
 
-LABEL build_date="2026-02-04-v4"
+LABEL build_date="2026-02-04-v5"
 
 WORKDIR /app
 
