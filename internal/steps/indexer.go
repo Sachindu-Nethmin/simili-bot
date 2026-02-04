@@ -41,6 +41,12 @@ func (s *Indexer) Name() string {
 func (s *Indexer) Run(ctx *pipeline.Context) error {
 	collectionName := ctx.Config.Qdrant.Collection
 
+	// Skip indexing if the issue was transferred to another repository
+	if ctx.Result.Transferred {
+		log.Printf("[indexer] Issue transferred to %s, skipping indexing in source repo", ctx.Result.TransferTarget)
+		return nil
+	}
+
 	if s.dryRun {
 		log.Printf("[indexer] DRY RUN: Would index issue #%d into %s", ctx.Issue.Number, collectionName)
 		return nil
