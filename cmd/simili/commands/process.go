@@ -271,7 +271,13 @@ func runProcess() {
 	}
 
 	// GitHub Client
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	// Prioritize TRANSFER_TOKEN for cross-repo operations if available
+	token := os.Getenv("TRANSFER_TOKEN")
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+
+	if token != "" {
 		ghClient := github.NewClient(context.Background(), token)
 		deps.GitHub = ghClient
 	}
