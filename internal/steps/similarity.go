@@ -9,6 +9,7 @@ package steps
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/similigh/simili-bot/internal/core/pipeline"
 	"github.com/similigh/simili-bot/internal/integrations/gemini"
@@ -72,25 +73,44 @@ func (s *SimilaritySearch) Run(ctx *pipeline.Context) error {
 	foundIssues := make([]pipeline.SimilarIssue, 0, len(results))
 	for _, res := range results {
 		// Safely extract payload fields with type checking
-		resNumberFloat, ok := res.Payload["number"].(float64)
-		if !ok {
-			log.Printf("[similarity_search] WARNING: Invalid number type in payload, skipping result")
+		// Match the indexer which uses "issue_number"
+		var number int
+		if resNum, ok := res.Payload["number"].(float64); ok {
+			number = int(resNum)
+		} else if resNum, ok := res.Payload["issue_number"].(float64); ok {
+			number = int(resNum)
+		} else {
+			log.Printf("[similarity_search] WARNING: No valid issue number in payload, skipping result")
 			continue
 		}
 
-		// Filter out the current issue itself if it's already indexed
+		// Filter out the current issue itself
 		resRepo, _ := res.Payload["repo"].(string)
-		if int(resNumberFloat) == ctx.Issue.Number && resRepo == ctx.Issue.Repo {
+		if number == ctx.Issue.Number && resRepo == ctx.Issue.Repo {
 			continue
 		}
 
-		// Safely extract other fields
+		// Safely extract other fields, with fallbacks
 		title, _ := res.Payload["title"].(string)
+		if title == "" {
+			// Try to extract from text if title is missing (indexers often put it there)
+			fullText, _ := res.Payload["text"].(string)
+			if strings.HasPrefix(fullText, "Title: ") {
+				lines := strings.SplitN(fullText, "\n", 2)
+				title = strings.TrimPrefix(lines[0], "Title: ")
+			} else {
+				title = "Similar Issue"
+			}
+		}
+
 		url, _ := res.Payload["url"].(string)
 		state, _ := res.Payload["state"].(string)
+		if state == "" {
+			state = "open" // Default
+		}
 
 		issue := pipeline.SimilarIssue{
-			Number:     int(resNumberFloat),
+			Number:     number,
 			Title:      title,
 			URL:        url,
 			State:      state,
