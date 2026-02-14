@@ -222,7 +222,7 @@ func (c *Config) applyDefaults() {
 		c.LLM.Provider = "gemini"
 	}
 	if c.LLM.Model == "" {
-		c.LLM.Model = "gemini-2.0-flash-lite"
+		c.LLM.Model = "gemini-2.5-flash"
 	}
 	// Transfer defaults
 	if c.Transfer.Enabled == nil {

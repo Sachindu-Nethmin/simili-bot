@@ -187,7 +187,7 @@ embedding:
 llm:
   provider: "gemini"
   api_key: "${GEMINI_API_KEY}"
-  model: "gemini-2.0-flash-lite"
+  model: "gemini-2.5-flash"
   # temperature: 0.3
 
 defaults:
@@ -196,7 +196,7 @@ defaults:
 ```
 
 Notes:
-- `llm.model` defaults to `gemini-2.0-flash-lite` when omitted.
+- `llm.model` defaults to `gemini-2.5-flash` when omitted.
 - `llm.api_key` can be omitted if `GEMINI_API_KEY` is set.
 - You can override the model at runtime with `LLM_MODEL`.
 

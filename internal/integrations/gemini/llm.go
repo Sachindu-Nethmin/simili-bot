@@ -110,7 +110,7 @@ func NewLLMClient(apiKey, model string) (*LLMClient, error) {
 	}
 
 	if model == "" {
-		model = "gemini-2.0-flash-lite" // Fast and cost-effective
+		model = "gemini-2.5-flash" // Fast and cost-effective
 	}
 
 	return &LLMClient{

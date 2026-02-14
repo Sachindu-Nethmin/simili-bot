@@ -34,8 +34,8 @@ func TestLLMConfigDefaults(t *testing.T) {
 	if cfg.LLM.Provider != "gemini" {
 		t.Errorf("Expected LLM.Provider to be 'gemini', got %s", cfg.LLM.Provider)
 	}
-	if cfg.LLM.Model != "gemini-2.0-flash-lite" {
-		t.Errorf("Expected LLM.Model to be 'gemini-2.0-flash-lite', got %s", cfg.LLM.Model)
+	if cfg.LLM.Model != "gemini-2.5-flash" {
+		t.Errorf("Expected LLM.Model to be 'gemini-2.5-flash', got %s", cfg.LLM.Model)
 	}
 }
 
