@@ -1,7 +1,7 @@
 // Author: Kaviru Hapuarachchi
 // GitHub: https://github.com/kavirubc
 // Created: 2026-02-02
-// Last Modified: 2026-02-05
+// Last Modified: 2026-02-18
 
 // Package config handles loading and merging Simili configuration.
 package config
@@ -113,6 +113,41 @@ type TransferConfig struct {
 	RepoCollection               string         `yaml:"repo_collection,omitempty"`                // Collection for repository documentation
 }
 
+// validate checks for required configuration fields.
+func (c *Config) Validate() error {
+	var missing []string
+
+	if c.Qdrant.URL == "" {
+		missing = append(missing, "qdrant.url (QDRANT_URL)")
+	}
+	if c.Qdrant.APIKey == "" {
+		missing = append(missing, "qdrant.api_key (QDRANT_API_KEY)")
+	}
+	if c.Qdrant.Collection == "" {
+		missing = append(missing, "qdrant.collection (QDRANT_COLLECTION)")
+	}
+
+	if c.Embedding.Provider == "" {
+		missing = append(missing, "embedding.provider (EMBEDDING_PROVIDER)")
+	}
+	if c.Embedding.APIKey == "" {
+		missing = append(missing, "embedding.api_key (EMBEDDING_API_KEY)")
+	}
+
+	if c.LLM.Provider == "" {
+		missing = append(missing, "llm.provider (LLM_PROVIDER)")
+	}
+	if c.LLM.APIKey == "" {
+		missing = append(missing, "llm.api_key (LLM_API_KEY)")
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
 // Load reads a config file from the given path and expands environment variables.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -126,6 +161,11 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg.applyDefaults()
+
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
@@ -144,6 +184,9 @@ func LoadWithInheritance(path string, fetcher func(ref string) ([]byte, error)) 
 
 	if cfg.Extends == "" {
 		cfg.applyDefaults()
+		if err := cfg.Validate(); err != nil {
+			return nil, err
+		}
 		return cfg, nil
 	}
 
@@ -161,6 +204,10 @@ func LoadWithInheritance(path string, fetcher func(ref string) ([]byte, error)) 
 	// Merge: child overrides parent
 	merged := mergeConfigs(parentCfg, cfg)
 	merged.applyDefaults()
+
+	if err := merged.Validate(); err != nil {
+		return nil, err
+	}
 
 	return merged, nil
 }
