@@ -35,4 +35,8 @@ go.work.sum
 # Local binaries and configs
 simili
 
+# Claude Code
+.claude/settings.local.json
+Claude.md
+
 

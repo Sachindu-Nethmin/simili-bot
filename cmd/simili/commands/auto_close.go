@@ -1,6 +1,7 @@
 // Author: Kaviru Hapuarachchi
 // GitHub: https://github.com/kavirubc
 // Created: 2026-02-25
+// Last Modified: 2026-02-27
 
 package commands
 
@@ -99,7 +100,7 @@ func runAutoClose(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stderr, "Warning: failed to load config from %s: %v — using defaults\n", actualCfgPath, err)
 			cfg = &config.Config{}
 		} else if verbose {
-			fmt.Printf("Loaded config from %s\n", actualCfgPath)
+			fmt.Fprintf(os.Stderr, "Loaded config from %s\n", actualCfgPath)
 		}
 	} else {
 		if verbose {
@@ -121,7 +122,7 @@ func runAutoClose(cmd *cobra.Command, args []string) {
 	}
 
 	if verbose && autoCloseGraceMinChanged {
-		fmt.Printf("Grace period override: %d min(s)\n", cfg.AutoClose.GracePeriodMinutesOverride)
+		fmt.Fprintf(os.Stderr, "Grace period override: %d min(s)\n", cfg.AutoClose.GracePeriodMinutesOverride)
 	}
 
 	// Run auto-closer
