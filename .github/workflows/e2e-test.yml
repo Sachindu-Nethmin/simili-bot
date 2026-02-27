@@ -113,6 +113,8 @@ jobs:
           defaults:
             similarity_threshold: 0.65
             max_similar_to_show: 3
+          auto_close:
+            grace_period_hours: 72
           CFGEOF
           sed -i "s/%COLLECTION%/$COLLECTION/g" .github/simili.yaml
 
@@ -414,6 +416,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BOT_PAT }}
           GH_TOKEN: ${{ secrets.BOT_PAT }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TEST_COLLECTION: ${{ env.TEST_COLLECTION }}
         run: |
           REPO="${{ env.BOT_NAME }}/${{ env.TEST_REPO_NAME }}"
 
@@ -453,10 +459,14 @@ jobs:
             exit 1
           fi
 
-          if [ "$PROCESSED" -gt 0 ]; then
-            echo "✅ Auto-closer processed $PROCESSED issue(s) — dry-run OK"
+          if [ "$PROCESSED" -gt 0 ] && [ "$CLOSED" -gt 0 ]; then
+            echo "✅ Auto-closer processed $PROCESSED issue(s), dry-closed $CLOSED — dry-run OK"
+          elif [ "$PROCESSED" -gt 0 ]; then
+            echo "❌ Processed $PROCESSED issue(s) but dry-closed 0 — all had human activity or grace period not elapsed"
+            exit 1
           else
-            echo "⚠️  Auto-closer found no issues to process (AC test issue may not be labeled yet)"
+            echo "❌ Auto-closer found no issues to process — AC test issue may not have been labeled"
+            exit 1
           fi
 
       # ----- 12. Cleanup Qdrant (always) -----
