@@ -54,19 +54,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          DRY_RUN_FLAG=""
+          # Build the command as an array to avoid word-splitting bugs
+          # with optional flags that may be empty.
+          CMD=(
+            ./simili-cli auto-close
+            --repo "${{ github.repository }}"
+            --config .github/simili.yaml
+            --verbose
+          )
+
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            DRY_RUN_FLAG="--dry-run"
+            CMD+=(--dry-run)
           fi
 
-          GRACE_FLAG=""
-          if [ -n "${{ inputs.grace_period_minutes }}" ]; then
-            GRACE_FLAG="--grace-period-minutes ${{ inputs.grace_period_minutes }}"
+          GRACE="${{ inputs.grace_period_minutes }}"
+          if [ -n "$GRACE" ]; then
+            CMD+=(--grace-period-minutes "$GRACE")
           fi
 
-          ./simili-cli auto-close \
-            --repo "${{ github.repository }}" \
-            --config .github/simili.yaml \
-            --verbose \
-            $DRY_RUN_FLAG \
-            $GRACE_FLAG
+          "${CMD[@]}"
