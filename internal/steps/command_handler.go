@@ -229,6 +229,16 @@ func (s *CommandHandler) handleUndo(ctx *pipeline.Context) error {
 		return fmt.Errorf("GitHub client required for undo command")
 	}
 
+	// Only org owners, members, or collaborators may issue /undo.
+	// Without this check any commenter could forge a bot-looking comment and
+	// redirect issues to arbitrary repositories the bot token has write access to.
+	assoc := strings.ToUpper(ctx.Issue.CommentAuthorAssociation)
+	if assoc != "OWNER" && assoc != "MEMBER" && assoc != "COLLABORATOR" {
+		log.Printf("[command_handler] Unauthorized /undo by %s (association: %s), skipping",
+			ctx.Issue.CommentAuthor, assoc)
+		return pipeline.ErrSkipPipeline
+	}
+
 	log.Printf("[command_handler] Handling /undo for issue #%d", ctx.Issue.Number)
 
 	// To undo, we need to find where this issue came from.

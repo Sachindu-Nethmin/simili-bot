@@ -5,6 +5,8 @@
 package steps
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -112,9 +114,16 @@ func writeGitHubOutput(key, value string) error {
 	}
 	defer f.Close()
 
-	// For multi-line values, use the heredoc syntax. For simple values, use key=value.
+	// For multi-line values use the heredoc syntax with a randomized delimiter to
+	// prevent a crafted value that contains "\nEOF\n" from injecting extra output
+	// variables into the GitHub Actions runner.
 	if strings.Contains(value, "\n") {
-		_, err = fmt.Fprintf(f, "%s<<EOF\n%s\nEOF\n", key, value)
+		var b [8]byte
+		if _, randErr := rand.Read(b[:]); randErr != nil {
+			return fmt.Errorf("failed to generate heredoc delimiter: %w", randErr)
+		}
+		delim := "EOF_" + hex.EncodeToString(b[:])
+		_, err = fmt.Fprintf(f, "%s<<%s\n%s\n%s\n", key, delim, value, delim)
 	} else {
 		_, err = fmt.Fprintf(f, "%s=%s\n", key, value)
 	}
