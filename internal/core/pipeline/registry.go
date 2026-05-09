@@ -28,11 +28,12 @@ type StepFactory func(deps *Dependencies) (Step, error)
 
 // Dependencies holds the dependencies that can be injected into steps.
 type Dependencies struct {
-	Embedder    *ai.Embedder
-	LLMClient   *ai.LLMClient
-	VectorStore qdrant.VectorStore
-	GitHub      *github.Client
-	DryRun      bool
+	Embedder      *ai.Embedder
+	LLMClient     *ai.LLMClient
+	VectorStore   qdrant.VectorStore
+	GitHub        *github.Client
+	GitHubSearcher *github.Searcher // non-nil when search.backend is "github_native" or "bm25"
+	DryRun        bool
 }
 
 // Close releases any resources held by the dependencies.
@@ -141,6 +142,30 @@ var Presets = map[string][]string{
 		"gatekeeper",
 		"vectordb_prep",
 		"indexer",
+	},
+
+	// issue-triage-github: Full triage using GitHub-native search (no Qdrant, no embedding key).
+	// Set search.backend: github_native (or bm25) in config to use this preset.
+	"issue-triage-github": {
+		"gatekeeper",
+		"command_handler",
+		"llm_router",
+		"transfer_check",
+		"github_similarity",
+		"duplicate_detector",
+		"quality_checker",
+		"triage",
+		"response_builder",
+		"action_executor",
+		"pending_action_scheduler",
+	},
+
+	// similarity-only-github: Find similar issues using GitHub-native search, no Qdrant required.
+	"similarity-only-github": {
+		"gatekeeper",
+		"github_similarity",
+		"response_builder",
+		"action_executor",
 	},
 }
 
