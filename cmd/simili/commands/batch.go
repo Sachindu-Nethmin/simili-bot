@@ -282,8 +282,9 @@ func applyConfigOverrides(cfg *config.Config) {
 func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) {
 	deps := &pipeline.Dependencies{}
 
-	// Embedder — only needed for the qdrant backend.
-	if cfg.Search.Backend == "" || cfg.Search.Backend == "qdrant" {
+	// Embedder — required for qdrant backend; also initialized for other backends
+	// when an embedding API key is present (e.g. VDB routing may need it).
+	if cfg.Search.Backend == "" || cfg.Search.Backend == "qdrant" || cfg.Embedding.APIKey != "" {
 		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize embedder: %w", err)

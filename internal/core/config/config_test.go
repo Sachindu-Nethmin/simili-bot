@@ -430,3 +430,17 @@ func TestValidateSkipsQdrantForGitHubBackend(t *testing.T) {
 		t.Errorf("expected no validation error for github_native backend, got: %v", err)
 	}
 }
+
+// TestValidateRejectsUnknownBackend verifies that Validate returns an error for
+// an unrecognised search.backend value.
+func TestValidateRejectsUnknownBackend(t *testing.T) {
+	cfg := &Config{
+		Search: SearchConfig{Backend: "elasticsearch"},
+	}
+	cfg.applyDefaults()
+	// applyDefaults won't overwrite an explicitly set non-empty backend.
+	cfg.Search.Backend = "elasticsearch"
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected validation error for unknown backend, got nil")
+	}
+}

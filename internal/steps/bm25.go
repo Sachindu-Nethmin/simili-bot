@@ -38,8 +38,8 @@ func tokenize(text string) []string {
 }
 
 // bm25Score returns BM25 Okapi scores for query terms against each document,
-// normalized to [0, 1] by dividing by the maximum score. Returns nil when
-// docs is empty or all scores are zero.
+// normalized to [0, 1] by dividing by the maximum score. Returns a zero-filled
+// slice when docs is empty or no query terms appear in any document.
 func bm25Score(query []string, docs []string) []float64 {
 	n := len(docs)
 	if n == 0 || len(query) == 0 {

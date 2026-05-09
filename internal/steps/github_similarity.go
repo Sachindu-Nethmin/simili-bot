@@ -88,27 +88,36 @@ func (s *GitHubSimilarity) Run(ctx *pipeline.Context) error {
 		itemType = "pr"
 	}
 
-	// Tier 1: GitHub hybrid search.
-	hits, rateLimited, err := s.searcher.SearchIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo, query, itemType, fetchLimit)
-	if err != nil {
-		log.Printf("[github_similarity] GitHub search error: %v — falling back to BM25", err)
-	}
-	if rateLimited {
-		log.Printf("[github_similarity] WARN: GitHub search rate-limited; falling back to BM25 over ListIssues")
+	bm25Fallback := ctx.Config.Search.BM25Fallback == nil || *ctx.Config.Search.BM25Fallback
+	backend := ctx.Config.Search.Backend
+
+	// Tier 1: GitHub hybrid search (skipped when backend is explicitly "bm25").
+	if backend != "bm25" {
+		hits, rateLimited, err := s.searcher.SearchIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo, query, itemType, fetchLimit)
+		if err != nil {
+			log.Printf("[github_similarity] GitHub search error: %v", err)
+		}
+		if rateLimited {
+			log.Printf("[github_similarity] WARN: GitHub search rate-limited")
+		}
+		if !rateLimited && err == nil && len(hits) > 0 {
+			candidates = hits
+		}
 	}
 
-	if !rateLimited && err == nil && len(hits) > 0 {
-		candidates = hits
-	} else {
-		// Tier 2: BM25 over all open issues.
+	// Tier 2: BM25 over ListIssues — used when backend is "bm25", or as fallback
+	// when tier 1 returned nothing and bm25_fallback is enabled.
+	if len(candidates) == 0 && (backend == "bm25" || bm25Fallback) {
 		usedFallback = true
 		if s.gh == nil {
 			log.Printf("[github_similarity] No GitHub client for BM25 fallback, skipping")
 			return nil
 		}
-		candidates, err = s.fetchAllIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo, itemType)
-		if err != nil {
-			log.Printf("[github_similarity] BM25 fallback list error: %v", err)
+		log.Printf("[github_similarity] Falling back to BM25 over ListIssues")
+		var fetchErr error
+		candidates, fetchErr = s.fetchAllIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo, itemType)
+		if fetchErr != nil {
+			log.Printf("[github_similarity] BM25 fallback list error: %v", fetchErr)
 			return nil
 		}
 	}
@@ -190,11 +199,14 @@ func (s *GitHubSimilarity) fetchAllIssues(ctx context.Context, org, repo, itemTy
 			return nil, fmt.Errorf("list issues: %w", err)
 		}
 		for _, iss := range issues {
+			if len(all) >= bm25CorpusCap {
+				log.Printf("[github_similarity] WARN: BM25 corpus capped at %d issues", bm25CorpusCap)
+				return all, nil
+			}
 			if iss.GetNumber() == 0 {
 				continue
 			}
 			isPR := iss.IsPullRequest()
-			// Filter by itemType if specified.
 			if itemType == "issue" && isPR {
 				continue
 			}
@@ -218,11 +230,7 @@ func (s *GitHubSimilarity) fetchAllIssues(ctx context.Context, org, repo, itemTy
 				Type:   t,
 			})
 		}
-		if resp.NextPage == 0 || len(all) >= bm25CorpusCap {
-			break
-		}
-		if len(all) >= bm25CorpusCap {
-			log.Printf("[github_similarity] WARN: BM25 corpus capped at %d issues", bm25CorpusCap)
+		if resp.NextPage == 0 {
 			break
 		}
 		opts.Page = resp.NextPage

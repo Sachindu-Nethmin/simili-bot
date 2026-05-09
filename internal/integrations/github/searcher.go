@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	ghlib "github.com/google/go-github/v60/github"
 	"golang.org/x/oauth2"
@@ -121,7 +120,7 @@ func searchIssuesRaw(data []byte) ([]SearchHit, error) {
 	hits := make([]SearchHit, 0, len(raw.Items))
 	for _, item := range raw.Items {
 		t := "issue"
-		if item.PullRequest != nil && strings.TrimSpace(item.PullRequest.URL) != "" {
+		if item.PullRequest != nil {
 			t = "pr"
 		}
 		hits = append(hits, SearchHit{

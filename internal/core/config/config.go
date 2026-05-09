@@ -278,6 +278,14 @@ func parseRaw(data []byte) (*Config, error) {
 // falls back to embedding.api_key when llm.api_key is unset, so rejecting the
 // entire config (and losing qdrant.collection) would be worse than proceeding.
 func (c *Config) Validate() error {
+	// Reject unknown backend values early.
+	switch c.Search.Backend {
+	case "", "qdrant", "github_native", "bm25":
+		// valid
+	default:
+		return fmt.Errorf("config validation failed: unknown search.backend %q (must be qdrant, github_native, or bm25)", c.Search.Backend)
+	}
+
 	// Qdrant and embedding API key are only required when using the qdrant backend.
 	if c.Search.Backend == "" || c.Search.Backend == "qdrant" {
 		required := []struct {
