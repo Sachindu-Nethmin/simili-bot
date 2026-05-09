@@ -387,3 +387,46 @@ embedding:
 		t.Fatalf("Expected error %q, got %q", wantErr, err.Error())
 	}
 }
+
+// TestSearchConfigDefaults verifies that Search defaults are set correctly.
+func TestSearchConfigDefaults(t *testing.T) {
+	cfg := &Config{}
+	cfg.applyDefaults()
+	if cfg.Search.Backend != "qdrant" {
+		t.Errorf("expected Search.Backend=qdrant, got %q", cfg.Search.Backend)
+	}
+	if cfg.Search.BM25Fallback == nil || !*cfg.Search.BM25Fallback {
+		t.Errorf("expected Search.BM25Fallback=true by default")
+	}
+}
+
+// TestSearchConfigYAML verifies that search block parses from YAML correctly.
+func TestSearchConfigYAML(t *testing.T) {
+	raw := `
+search:
+  backend: github_native
+  bm25_fallback: false
+`
+	cfg, err := parseRaw([]byte(raw))
+	if err != nil {
+		t.Fatalf("parseRaw error: %v", err)
+	}
+	if cfg.Search.Backend != "github_native" {
+		t.Errorf("expected github_native, got %q", cfg.Search.Backend)
+	}
+	if cfg.Search.BM25Fallback == nil || *cfg.Search.BM25Fallback {
+		t.Errorf("expected BM25Fallback=false")
+	}
+}
+
+// TestValidateSkipsQdrantForGitHubBackend verifies that Validate does not
+// require Qdrant config when search.backend is not "qdrant".
+func TestValidateSkipsQdrantForGitHubBackend(t *testing.T) {
+	cfg := &Config{
+		Search: SearchConfig{Backend: "github_native"},
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected no validation error for github_native backend, got: %v", err)
+	}
+}
