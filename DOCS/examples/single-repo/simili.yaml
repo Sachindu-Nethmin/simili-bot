@@ -1,20 +1,31 @@
-qdrant:
-  url: "${QDRANT_URL}"
-  api_key: "${QDRANT_API_KEY}"
-  collection: "my-issues"
+# Simili-Bot — single-repo config using GitHub-native search (zero infrastructure)
+# No Qdrant, no embedding API key required. Only GITHUB_TOKEN (automatic in Actions)
+# and optionally an LLM key for duplicate verdict.
 
-embedding:
-  provider: "gemini" # or "openai"
-  api_key: "${GEMINI_API_KEY}" # or "${OPENAI_API_KEY}"
-  model: "gemini-embedding-001" # OpenAI example: "text-embedding-3-small"
-  dimensions: 3072 # OpenAI text-embedding-3-small -> 1536
+search:
+  backend: github_native   # "github_native" | "bm25" | "qdrant"
+  bm25_fallback: true
+
+workflow: issue-triage-github
 
 llm:
-  provider: "gemini"
+  provider: "gemini"       # or "openai"
   api_key: "${GEMINI_API_KEY}"
   model: "gemini-2.5-flash"
 
 defaults:
-  similarity_threshold: 0.65
+  similarity_threshold: 0.15  # BM25 scores; raise to 0.25–0.40 if too noisy
   max_similar_to_show: 5
-  duplicate_candidates: 5  # Max candidates sent to LLM for duplicate/related analysis (default: 5)
+  duplicate_candidates: 5
+
+# --- Qdrant backend (legacy) ---
+# To use Qdrant instead, set search.backend: qdrant and uncomment below:
+# qdrant:
+#   url: "${QDRANT_URL}"
+#   api_key: "${QDRANT_API_KEY}"
+#   collection: "my-issues"
+# embedding:
+#   provider: "gemini"
+#   api_key: "${GEMINI_API_KEY}"
+#   model: "gemini-embedding-001"
+#   dimensions: 3072

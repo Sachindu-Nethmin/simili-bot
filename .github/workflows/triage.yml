@@ -41,8 +41,8 @@ jobs:
         id: simili
         uses: ./
         env:
-          QDRANT_URL: ${{ secrets.QDRANT_URL }}
-          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          # No Qdrant secrets needed — using GitHub-native hybrid search.
+          # GEMINI_API_KEY is optional; enables LLM duplicate verdict when present.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         with:
           config_path: .github/simili.yaml
