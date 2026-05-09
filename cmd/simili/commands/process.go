@@ -205,15 +205,17 @@ func runProcess() {
 	}
 
 	// Initialize clients with error logging
-	// Embedder
-	embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
-	if err == nil {
-		deps.Embedder = embedder
-		if verbose {
-			fmt.Printf("Initialized Embedder (%s) with model: %s\n", embedder.Provider(), embedder.Model())
+	// Embedder — only needed for the qdrant backend.
+	if cfg.Search.Backend == "" || cfg.Search.Backend == "qdrant" {
+		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
+		if err == nil {
+			deps.Embedder = embedder
+			if verbose {
+				fmt.Printf("Initialized Embedder (%s) with model: %s\n", embedder.Provider(), embedder.Model())
+			}
+		} else {
+			fmt.Printf("Warning: Failed to initialize embedder: %v\n", err)
 		}
-	} else {
-		fmt.Printf("Warning: Failed to initialize embedder: %v\n", err)
 	}
 
 	// Vector Store
@@ -257,6 +259,14 @@ func runProcess() {
 	if token != "" {
 		ghClient := github.NewClient(context.Background(), token)
 		deps.GitHub = ghClient
+
+		// GitHub Searcher — used by the github_native and bm25 backends.
+		if cfg.Search.Backend == "github_native" || cfg.Search.Backend == "bm25" {
+			deps.GitHubSearcher = github.NewSearcher(context.Background(), token)
+			if verbose {
+				fmt.Printf("Initialized GitHub Searcher (backend: %s)\n", cfg.Search.Backend)
+			}
+		}
 	}
 
 	// LLM Client (Gemini/OpenAI auto-selected by available keys)
