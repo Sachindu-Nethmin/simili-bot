@@ -62,4 +62,8 @@ func RegisterAll(r *pipeline.Registry) {
 	r.Register("pending_action_scheduler", func(deps *pipeline.Dependencies) (pipeline.Step, error) {
 		return NewPendingActionScheduler(deps), nil
 	})
+
+	r.Register("github_similarity", func(deps *pipeline.Dependencies) (pipeline.Step, error) {
+		return NewGitHubSimilarity(deps), nil
+	})
 }
