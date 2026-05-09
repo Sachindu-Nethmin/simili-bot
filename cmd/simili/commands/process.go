@@ -50,7 +50,7 @@ func init() {
 
 	processCmd.Flags().StringVar(&issueFile, "issue", "", "Path to issue JSON file")
 	processCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in dry-run mode (no side effects)")
-	processCmd.Flags().StringVar(&workflow, "workflow", "issue-triage", "Workflow preset to run")
+	processCmd.Flags().StringVar(&workflow, "workflow", "", "Workflow preset to run (default: value from config, or issue-triage)")
 	processCmd.Flags().StringVar(&repoName, "repo", "", "Repository name (override)")
 	processCmd.Flags().StringVar(&orgName, "org", "", "Organization name (override)")
 	processCmd.Flags().IntVar(&issueNum, "number", 0, "Issue number (override)")
@@ -196,8 +196,12 @@ func runProcess() {
 		fmt.Printf("Processing Issue: %s/%s #%d\n", issue.Org, issue.Repo, issue.Number)
 	}
 
-	// Determine steps
-	stepNames := pipeline.ResolveSteps(cfg.Steps, workflow)
+	// Determine steps — CLI flag takes precedence over config file workflow.
+	resolvedWorkflow := workflow
+	if resolvedWorkflow == "" {
+		resolvedWorkflow = cfg.Workflow
+	}
+	stepNames := pipeline.ResolveSteps(cfg.Steps, resolvedWorkflow)
 
 	// Initialize Dependencies
 	deps := &pipeline.Dependencies{
