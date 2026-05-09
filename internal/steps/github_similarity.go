@@ -82,8 +82,14 @@ func (s *GitHubSimilarity) Run(ctx *pipeline.Context) error {
 		return nil
 	}
 
+	// Determine item type for search filter: PRs search for similar PRs, issues for issues.
+	itemType := "issue"
+	if ctx.Issue.EventType == "pull_request" {
+		itemType = "pr"
+	}
+
 	// Tier 1: GitHub hybrid search.
-	hits, rateLimited, err := s.searcher.SearchIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo, query, fetchLimit)
+	hits, rateLimited, err := s.searcher.SearchIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo, query, itemType, fetchLimit)
 	if err != nil {
 		log.Printf("[github_similarity] GitHub search error: %v — falling back to BM25", err)
 	}
@@ -100,7 +106,7 @@ func (s *GitHubSimilarity) Run(ctx *pipeline.Context) error {
 			log.Printf("[github_similarity] No GitHub client for BM25 fallback, skipping")
 			return nil
 		}
-		candidates, err = s.fetchAllIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo)
+		candidates, err = s.fetchAllIssues(ctx.Ctx, ctx.Issue.Org, ctx.Issue.Repo, itemType)
 		if err != nil {
 			log.Printf("[github_similarity] BM25 fallback list error: %v", err)
 			return nil
@@ -168,8 +174,9 @@ func (s *GitHubSimilarity) Run(ctx *pipeline.Context) error {
 	return nil
 }
 
-// fetchAllIssues pages through the GitHub Issues list API up to bm25CorpusCap issues.
-func (s *GitHubSimilarity) fetchAllIssues(ctx context.Context, org, repo string) ([]githubpkg.SearchHit, error) {
+// fetchAllIssues pages through the GitHub Issues list API up to bm25CorpusCap items.
+// itemType filters the result: "issue" for issues, "pr" for pull requests, "" for both.
+func (s *GitHubSimilarity) fetchAllIssues(ctx context.Context, org, repo, itemType string) ([]githubpkg.SearchHit, error) {
 	var all []githubpkg.SearchHit
 	opts := &ghlib.IssueListByRepoOptions{
 		State: "open",
@@ -186,8 +193,16 @@ func (s *GitHubSimilarity) fetchAllIssues(ctx context.Context, org, repo string)
 			if iss.GetNumber() == 0 {
 				continue
 			}
+			isPR := iss.IsPullRequest()
+			// Filter by itemType if specified.
+			if itemType == "issue" && isPR {
+				continue
+			}
+			if itemType == "pr" && !isPR {
+				continue
+			}
 			t := "issue"
-			if iss.IsPullRequest() {
+			if isPR {
 				t = "pr"
 			}
 			body := ""

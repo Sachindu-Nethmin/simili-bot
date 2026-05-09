@@ -55,9 +55,10 @@ type searchIssuesResponse struct {
 }
 
 // SearchIssues queries /search/issues?search_type=hybrid for the given repo.
-// Returns hits, rateLimited=true when the API rate-limit is hit (not a hard error),
-// and a non-nil err only for genuine failures (network, auth, unexpected status).
-func (s *Searcher) SearchIssues(ctx context.Context, org, repo, query string, limit int) (hits []SearchHit, rateLimited bool, err error) {
+// itemType filters results: "issue" for issues only, "pr" for pull requests only,
+// or "" to search both. Returns hits, rateLimited=true when the API rate-limit is
+// hit (not a hard error), and a non-nil err only for genuine failures.
+func (s *Searcher) SearchIssues(ctx context.Context, org, repo, query, itemType string, limit int) (hits []SearchHit, rateLimited bool, err error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -65,7 +66,13 @@ func (s *Searcher) SearchIssues(ctx context.Context, org, repo, query string, li
 		limit = 100
 	}
 
-	q := fmt.Sprintf("repo:%s/%s is:issue %s", org, repo, query)
+	filter := "is:issue"
+	if itemType == "pr" {
+		filter = "is:pr"
+	} else if itemType == "" {
+		filter = "" // search both issues and PRs
+	}
+	q := fmt.Sprintf("repo:%s/%s %s %s", org, repo, filter, query)
 	path := fmt.Sprintf("search/issues?q=%s&search_type=hybrid&per_page=%d",
 		url.QueryEscape(q), limit)
 
