@@ -282,14 +282,17 @@ func applyConfigOverrides(cfg *config.Config) {
 func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) {
 	deps := &pipeline.Dependencies{}
 
-	// Initialize Embedder (Gemini/OpenAI auto-selected by available keys)
-	embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize embedder: %w", err)
-	}
-	deps.Embedder = embedder
-	if verbose {
-		fmt.Printf("✓ Initialized Embedder (%s) with model: %s\n", embedder.Provider(), embedder.Model())
+	// Embedder — required for qdrant backend; also initialized for other backends
+	// when an embedding API key is present (e.g. VDB routing may need it).
+	if cfg.Search.Backend == "" || cfg.Search.Backend == "qdrant" || cfg.Embedding.APIKey != "" {
+		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize embedder: %w", err)
+		}
+		deps.Embedder = embedder
+		if verbose {
+			fmt.Printf("✓ Initialized Embedder (%s) with model: %s\n", embedder.Provider(), embedder.Model())
+		}
 	}
 
 	// Initialize Qdrant Client
@@ -330,6 +333,14 @@ func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) 
 		deps.GitHub = ghClient
 		if verbose {
 			fmt.Println("✓ Initialized GitHub client")
+		}
+
+		// GitHub Searcher — used by the github_native and bm25 backends.
+		if cfg.Search.Backend == "github_native" || cfg.Search.Backend == "bm25" {
+			deps.GitHubSearcher = github.NewSearcher(context.Background(), token)
+			if verbose {
+				fmt.Printf("✓ Initialized GitHub Searcher (backend: %s)\n", cfg.Search.Backend)
+			}
 		}
 	} else if verbose {
 		fmt.Println("ℹ No GitHub token found (some steps may be limited)")

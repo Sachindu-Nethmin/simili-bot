@@ -1,25 +1,25 @@
-qdrant:
-  url: "${QDRANT_URL}"
-  api_key: "${QDRANT_API_KEY}"
-  collection: "simili_bot_v1"
-  pr_collection: "${QDRANT_PR_COLLECTION}"  # Optional — leave unset to index PRs in the main collection
+# Simili-Bot configuration — github_native backend (no Qdrant, no embedding key required)
+# GitHub's hybrid search API + in-process BM25 re-ranking handles similarity search.
+# Only GITHUB_TOKEN (provided automatically by Actions) and optionally GEMINI_API_KEY
+# (for LLM duplicate verdict) are needed.
 
-embedding:
-  provider: "gemini"
-  api_key: "${GEMINI_API_KEY}"
-  model: "gemini-embedding-001"
-  dimensions: 3072
+search:
+  backend: github_native   # "github_native" | "bm25" | "qdrant"
+  bm25_fallback: true      # fall back to BM25 if GitHub search is rate-limited
+
+workflow: issue-triage-github
 
 llm:
   provider: "gemini"
-  api_key: "${GEMINI_API_KEY}"
+  api_key: "${GEMINI_API_KEY}"   # Optional — enables LLM duplicate verdict; omit to skip
   model: "gemini-2.5-flash"
 
 defaults:
-  similarity_threshold: 0.70
+  # BM25 scores are in [0,1] but typically lower than cosine similarity.
+  # 0.10–0.20 is a good starting point; raise if too many false positives.
+  similarity_threshold: 0.15
   max_similar_to_show: 3
-  cross_repo_search: true
-  duplicate_candidates: 5  # Max candidates sent to LLM for duplicate/related analysis (default: 5)
+  duplicate_candidates: 5
 
 transfer:
-  enabled: false # Enable this if you have multiple repos set up
+  enabled: false

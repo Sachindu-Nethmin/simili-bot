@@ -50,7 +50,7 @@ func init() {
 
 	processCmd.Flags().StringVar(&issueFile, "issue", "", "Path to issue JSON file")
 	processCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in dry-run mode (no side effects)")
-	processCmd.Flags().StringVar(&workflow, "workflow", "issue-triage", "Workflow preset to run")
+	processCmd.Flags().StringVar(&workflow, "workflow", "", "Workflow preset to run (default: value from config, or issue-triage)")
 	processCmd.Flags().StringVar(&repoName, "repo", "", "Repository name (override)")
 	processCmd.Flags().StringVar(&orgName, "org", "", "Organization name (override)")
 	processCmd.Flags().IntVar(&issueNum, "number", 0, "Issue number (override)")
@@ -196,8 +196,12 @@ func runProcess() {
 		fmt.Printf("Processing Issue: %s/%s #%d\n", issue.Org, issue.Repo, issue.Number)
 	}
 
-	// Determine steps
-	stepNames := pipeline.ResolveSteps(cfg.Steps, workflow)
+	// Determine steps — CLI flag takes precedence over config file workflow.
+	resolvedWorkflow := workflow
+	if resolvedWorkflow == "" {
+		resolvedWorkflow = cfg.Workflow
+	}
+	stepNames := pipeline.ResolveSteps(cfg.Steps, resolvedWorkflow)
 
 	// Initialize Dependencies
 	deps := &pipeline.Dependencies{
@@ -205,15 +209,18 @@ func runProcess() {
 	}
 
 	// Initialize clients with error logging
-	// Embedder
-	embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
-	if err == nil {
-		deps.Embedder = embedder
-		if verbose {
-			fmt.Printf("Initialized Embedder (%s) with model: %s\n", embedder.Provider(), embedder.Model())
+	// Embedder — required for qdrant backend; also initialized for other backends
+	// when an embedding API key is present (e.g. VDB routing may need it).
+	if cfg.Search.Backend == "" || cfg.Search.Backend == "qdrant" || cfg.Embedding.APIKey != "" {
+		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
+		if err == nil {
+			deps.Embedder = embedder
+			if verbose {
+				fmt.Printf("Initialized Embedder (%s) with model: %s\n", embedder.Provider(), embedder.Model())
+			}
+		} else {
+			fmt.Printf("Warning: Failed to initialize embedder: %v\n", err)
 		}
-	} else {
-		fmt.Printf("Warning: Failed to initialize embedder: %v\n", err)
 	}
 
 	// Vector Store
@@ -257,6 +264,14 @@ func runProcess() {
 	if token != "" {
 		ghClient := github.NewClient(context.Background(), token)
 		deps.GitHub = ghClient
+
+		// GitHub Searcher — used by the github_native and bm25 backends.
+		if cfg.Search.Backend == "github_native" || cfg.Search.Backend == "bm25" {
+			deps.GitHubSearcher = github.NewSearcher(context.Background(), token)
+			if verbose {
+				fmt.Printf("Initialized GitHub Searcher (backend: %s)\n", cfg.Search.Backend)
+			}
+		}
 	}
 
 	// LLM Client (Gemini/OpenAI auto-selected by available keys)

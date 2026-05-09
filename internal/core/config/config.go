@@ -54,6 +54,20 @@ type Config struct {
 	// to prevent infinite comment loops. Built-in heuristics (e.g. "[bot]" suffix,
 	// "gh-simili" prefix) always apply in addition to this list.
 	BotUsers []string `yaml:"bot_users,omitempty"`
+
+	// Search configures the similarity search backend.
+	Search SearchConfig `yaml:"search,omitempty"`
+}
+
+// SearchConfig selects the similarity search backend.
+// "qdrant" (default) preserves existing behaviour; "github_native" and "bm25"
+// require no external VDB or embedding API key.
+type SearchConfig struct {
+	// Backend selects the search implementation: "qdrant" | "github_native" | "bm25".
+	Backend string `yaml:"backend,omitempty"`
+	// BM25Fallback enables automatic fallback to in-process BM25 when the
+	// GitHub hybrid search API returns no results or is rate-limited.
+	BM25Fallback *bool `yaml:"bm25_fallback,omitempty"`
 }
 
 // AutoCloseConfig configures the auto-close behavior for duplicate issues.
@@ -264,27 +278,36 @@ func parseRaw(data []byte) (*Config, error) {
 // falls back to embedding.api_key when llm.api_key is unset, so rejecting the
 // entire config (and losing qdrant.collection) would be worse than proceeding.
 func (c *Config) Validate() error {
-	requiredFields := []struct {
-		name   string
-		envVar string
-		value  string
-	}{
-		{name: "qdrant.url", envVar: "QDRANT_URL", value: c.Qdrant.URL},
-		{name: "qdrant.api_key", envVar: "QDRANT_API_KEY", value: c.Qdrant.APIKey},
-		{name: "qdrant.collection", envVar: "QDRANT_COLLECTION", value: c.Qdrant.Collection},
-		{name: "embedding.api_key", envVar: "EMBEDDING_API_KEY", value: c.Embedding.APIKey},
+	// Reject unknown backend values early.
+	switch c.Search.Backend {
+	case "", "qdrant", "github_native", "bm25":
+		// valid
+	default:
+		return fmt.Errorf("config validation failed: unknown search.backend %q (must be qdrant, github_native, or bm25)", c.Search.Backend)
 	}
 
-	for _, field := range requiredFields {
-		if strings.TrimSpace(field.value) == "" {
-			return fmt.Errorf(
-				"config validation failed: %s is empty (check %s environment variable)",
-				field.name,
-				field.envVar,
-			)
+	// Qdrant and embedding API key are only required when using the qdrant backend.
+	if c.Search.Backend == "" || c.Search.Backend == "qdrant" {
+		required := []struct {
+			name   string
+			envVar string
+			value  string
+		}{
+			{name: "qdrant.url", envVar: "QDRANT_URL", value: c.Qdrant.URL},
+			{name: "qdrant.api_key", envVar: "QDRANT_API_KEY", value: c.Qdrant.APIKey},
+			{name: "qdrant.collection", envVar: "QDRANT_COLLECTION", value: c.Qdrant.Collection},
+			{name: "embedding.api_key", envVar: "EMBEDDING_API_KEY", value: c.Embedding.APIKey},
+		}
+		for _, field := range required {
+			if strings.TrimSpace(field.value) == "" {
+				return fmt.Errorf(
+					"config validation failed: %s is empty (check %s environment variable)",
+					field.name,
+					field.envVar,
+				)
+			}
 		}
 	}
-
 	return nil
 }
 
@@ -387,6 +410,14 @@ func (c *Config) applyDefaults() {
 	// Auto-close defaults
 	if c.AutoClose.GracePeriodHours == 0 {
 		c.AutoClose.GracePeriodHours = 72
+	}
+	// Search backend defaults
+	if c.Search.Backend == "" {
+		c.Search.Backend = "qdrant"
+	}
+	if c.Search.BM25Fallback == nil {
+		t := true
+		c.Search.BM25Fallback = &t
 	}
 	// Claude Code defaults
 	if c.ClaudeCode.TriggerPhrase == "" {
@@ -570,6 +601,14 @@ func mergeConfigs(parent, child *Config) *Config {
 	}
 	if len(child.ClaudeCode.Maintenance.Tasks) > 0 {
 		result.ClaudeCode.Maintenance.Tasks = child.ClaudeCode.Maintenance.Tasks
+	}
+
+	// Search: override if fields are set
+	if child.Search.Backend != "" {
+		result.Search.Backend = child.Search.Backend
+	}
+	if child.Search.BM25Fallback != nil {
+		result.Search.BM25Fallback = child.Search.BM25Fallback
 	}
 
 	return &result

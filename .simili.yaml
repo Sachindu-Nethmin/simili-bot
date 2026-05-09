@@ -1,16 +1,16 @@
-qdrant:
-  url: ${QDRANT_URL}
-  api_key: ${QDRANT_API_KEY}
-  collection: ${QDRANT_COLLECTION}
-embedding:
-  provider: gemini
-  api_key: ${GEMINI_API_KEY}
-  model: gemini-embedding-001
-  dimensions: 3072
+# Local dev config — github_native backend
+# Set GITHUB_TOKEN and optionally GEMINI_API_KEY before running.
+search:
+  backend: github_native
+  bm25_fallback: true
+
+workflow: issue-triage-github
+
 llm:
   provider: gemini
   api_key: ${GEMINI_API_KEY}
   model: gemini-2.5-flash
+
 defaults:
-  similarity_threshold: 0.7
+  similarity_threshold: 0.15
   max_similar_to_show: 5
