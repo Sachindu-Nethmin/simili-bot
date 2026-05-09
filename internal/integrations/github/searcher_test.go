@@ -67,7 +67,7 @@ func TestSearchIssues_RateLimited(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Ratelimit-Remaining", "0")
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
 	}))
 	defer srv.Close()
 
