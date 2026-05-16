@@ -93,15 +93,9 @@ func runProcess() {
 	var err error
 
 	if actualCfgPath != "" {
-		cfg, err = config.LoadWithInheritance(actualCfgPath, fetcher)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load config from %s: %v. Proceeding with defaults/env vars.\n", actualCfgPath, err)
-			cfg = &config.Config{} // Fallback to empty config
-			cfg.ApplyDefaults()
-		} else {
-			if verbose {
-				fmt.Printf("Loaded config from %s\n", actualCfgPath)
-			}
+		cfg, err = loadConfigWithWarning(actualCfgPath, fetcher)
+		if err == nil && verbose {
+			fmt.Printf("Loaded config from %s\n", actualCfgPath)
 		}
 	} else {
 		// No config file found
@@ -219,7 +213,7 @@ func runProcess() {
 				fmt.Printf("Initialized Embedder (%s) with model: %s\n", embedder.Provider(), embedder.Model())
 			}
 		} else {
-			fmt.Printf("Warning: Failed to initialize embedder: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to initialize embedder: %v\n", err)
 		}
 	}
 
@@ -246,7 +240,7 @@ func runProcess() {
 		if err == nil {
 			deps.VectorStore = qdrantClient
 		} else {
-			fmt.Printf("Warning: Failed to initialize Qdrant client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Qdrant client: %v\n", err)
 		}
 	} else {
 		if verbose {
@@ -290,7 +284,7 @@ func runProcess() {
 			fmt.Printf("Initialized LLM Client (%s) with model: %s\n", llm.Provider(), llm.Model())
 		}
 	} else {
-		fmt.Printf("Warning: Failed to initialize LLM client: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: Failed to initialize LLM client: %v\n", err)
 	}
 
 	defer deps.Close()
@@ -299,6 +293,19 @@ func runProcess() {
 	fmt.Println("[Simili-Bot] Starting pipeline...")
 	runPipeline(deps, stepNames, &issue, cfg)
 	fmt.Println("[Simili-Bot] Pipeline completed")
+}
+
+// loadConfigWithWarning loads config from path using the given fetcher. On error it prints a
+// warning to stderr and returns a default config so the caller can continue.
+func loadConfigWithWarning(path string, fetcher func(string) ([]byte, error)) (*config.Config, error) {
+	cfg, err := config.LoadWithInheritance(path, fetcher)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to load config from %s: %v. Proceeding with defaults/env vars.\n", path, err)
+		fallback := &config.Config{}
+		fallback.ApplyDefaults()
+		return fallback, err
+	}
+	return cfg, nil
 }
 
 func resolveIssueRepo(flagOrg, flagRepo string) (string, string) {
