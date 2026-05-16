@@ -11,17 +11,18 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/go-github/v60/github"
 	"github.com/google/uuid"
+	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
+
 	similiConfig "github.com/similigh/simili-bot/internal/core/config"
 	"github.com/similigh/simili-bot/internal/integrations/ai"
 	similiGithub "github.com/similigh/simili-bot/internal/integrations/github"
 	"github.com/similigh/simili-bot/internal/integrations/qdrant"
 	"github.com/similigh/simili-bot/internal/utils/text"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -135,17 +136,23 @@ func runIndex(cmd *cobra.Command, args []string) {
 	}
 
 	jobs := make(chan Job, indexWorkers)
-	var wg sync.WaitGroup
+
+	g, gctx := errgroup.WithContext(ctx)
 
 	// Issue workers.
 	for i := 0; i < indexWorkers; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
+		id := i
+		g.Go(func() (retErr error) {
+			defer func() {
+				if r := recover(); r != nil {
+					retErr = fmt.Errorf("issue worker %d panicked: %v", id, r)
+				}
+			}()
 			for job := range jobs {
-				processIssue(ctx, id, job.Issue, ghClient, embedder, qdrantClient, splitter, cfg.Qdrant.Collection, org, repoName, indexDryRun)
+				processIssue(gctx, id, job.Issue, ghClient, embedder, qdrantClient, splitter, cfg.Qdrant.Collection, org, repoName, indexDryRun)
 			}
-		}(i)
+			return nil
+		})
 	}
 
 	// PR workers — only when a dedicated PR collection is configured.
@@ -153,72 +160,94 @@ func runIndex(cmd *cobra.Command, args []string) {
 	if indexIncludePRs && cfg.Qdrant.PRCollection != "" {
 		prJobs = make(chan Job, indexWorkers)
 		for i := 0; i < indexWorkers; i++ {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
+			id := i
+			g.Go(func() (retErr error) {
+				defer func() {
+					if r := recover(); r != nil {
+						retErr = fmt.Errorf("PR worker %d panicked: %v", id, r)
+					}
+				}()
 				for job := range prJobs {
-					processPullRequest(ctx, id, job.Issue, ghClient, embedder, qdrantClient, splitter, cfg.Qdrant.PRCollection, org, repoName, indexDryRun)
+					processPullRequest(gctx, id, job.Issue, ghClient, embedder, qdrantClient, splitter, cfg.Qdrant.PRCollection, org, repoName, indexDryRun)
 				}
-			}(i)
+				return nil
+			})
 		}
 	}
 
-	// Issue/PR producer.
-	opts := &github.IssueListByRepoOptions{
-		State:       "all",
-		Sort:        "created",
-		Direction:   "asc",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	if indexSince != "" {
-		t, parseErr := time.Parse(time.RFC3339, indexSince)
-		if parseErr == nil {
-			opts.Since = t
-		} else {
-			log.Printf("Warning: Could not parse --since as ISO8601, ignoring (fetching all)")
-		}
-	}
-
-	page := 1
-	for {
-		opts.Page = page
-		issues, resp, err := ghClient.ListIssues(ctx, org, repoName, opts)
-		if err != nil {
-			log.Printf("Error listing issues page %d: %v", page, err)
-			break
-		}
-
-		if len(issues) == 0 {
-			break
-		}
-
-		log.Printf("Fetched page %d (%d issues)", page, len(issues))
-
-		for _, issue := range issues {
-			if !indexIncludePRs && issue.IsPullRequest() {
-				continue
+	// Issue/PR producer — runs inside errgroup so that a panic or early exit
+	// always closes the job channels via defer, unblocking workers and
+	// guaranteeing g.Wait() returns. This mirrors the batch.go sender pattern.
+	prJobsCapture := prJobs // capture for the closure
+	g.Go(func() error {
+		defer close(jobs)
+		defer func() {
+			if prJobsCapture != nil {
+				close(prJobsCapture)
 			}
-			// Route PRs to the dedicated channel when available; otherwise fall
-			// through to the issues collection (backward compatibility).
-			if issue.IsPullRequest() && prJobs != nil {
-				prJobs <- Job{Issue: issue}
+		}()
+
+		opts := &github.IssueListByRepoOptions{
+			State:       "all",
+			Sort:        "created",
+			Direction:   "asc",
+			ListOptions: github.ListOptions{PerPage: 100},
+		}
+
+		if indexSince != "" {
+			t, parseErr := time.Parse(time.RFC3339, indexSince)
+			if parseErr == nil {
+				opts.Since = t
 			} else {
-				jobs <- Job{Issue: issue}
+				log.Printf("Warning: Could not parse --since as ISO8601, ignoring (fetching all)")
 			}
 		}
 
-		if resp.NextPage == 0 {
-			break
-		}
-		page = resp.NextPage
-	}
+		page := 1
+		for {
+			opts.Page = page
+			issues, resp, err := ghClient.ListIssues(gctx, org, repoName, opts)
+			if err != nil {
+				log.Printf("Error listing issues page %d: %v", page, err)
+				break
+			}
 
-	close(jobs)
-	if prJobs != nil {
-		close(prJobs)
+			if len(issues) == 0 {
+				break
+			}
+
+			log.Printf("Fetched page %d (%d issues)", page, len(issues))
+
+			for _, issue := range issues {
+				if !indexIncludePRs && issue.IsPullRequest() {
+					continue
+				}
+				// Route PRs to the dedicated channel when available; otherwise fall
+				// through to the issues collection (backward compatibility).
+				var ch chan Job
+				if issue.IsPullRequest() && prJobsCapture != nil {
+					ch = prJobsCapture
+				} else {
+					ch = jobs
+				}
+				select {
+				case ch <- Job{Issue: issue}:
+				case <-gctx.Done():
+					return gctx.Err()
+				}
+			}
+
+			if resp.NextPage == 0 {
+				break
+			}
+			page = resp.NextPage
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		log.Fatalf("Indexing failed: %v", err)
 	}
-	wg.Wait()
 	log.Println("Indexing complete.")
 }
 
