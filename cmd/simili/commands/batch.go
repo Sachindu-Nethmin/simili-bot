@@ -1,7 +1,7 @@
 // Author: Kaviru Hapuarachchi
 // GitHub: https://github.com/kavirubc
 // Created: 2026-02-10
-// Last Modified: 2026-02-10
+// Last Modified: 2026-05-17
 
 package commands
 
@@ -99,7 +99,7 @@ func init() {
 	batchCmd.Flags().IntVar(&batchTopK, "top-k", 0, "Override max similar issues to show")
 
 	if err := batchCmd.MarkFlagRequired("file"); err != nil {
-		fmt.Printf("Warning: Failed to mark file flag as required: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: Failed to mark file flag as required: %v\n", err)
 	}
 }
 
@@ -112,7 +112,7 @@ func runBatch(cmd *cobra.Command, args []string) {
 	}
 	issues, err := loadIssues(batchFile)
 	if err != nil {
-		fmt.Printf("❌ Error loading issues: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ Error loading issues: %v\n", err)
 		os.Exit(1)
 	}
 	if verbose {
@@ -184,7 +184,7 @@ func runBatch(cmd *cobra.Command, args []string) {
 	// 5. Initialize dependencies with DryRun=true
 	deps, err := initializeDependencies(cfg)
 	if err != nil {
-		fmt.Printf("❌ Error initializing dependencies: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ Error initializing dependencies: %v\n", err)
 		os.Exit(1)
 	}
 	defer deps.Close()
@@ -204,7 +204,7 @@ func runBatch(cmd *cobra.Command, args []string) {
 
 	// 7. Output results
 	if err := outputResults(results); err != nil {
-		fmt.Printf("❌ Error outputting results: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ Error outputting results: %v\n", err)
 		os.Exit(1)
 	}
 
