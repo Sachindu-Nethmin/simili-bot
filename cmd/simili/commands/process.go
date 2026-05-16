@@ -203,9 +203,8 @@ func runProcess() {
 	}
 
 	// Initialize clients with error logging
-	// Embedder — required for qdrant backend; also initialized for other backends
-	// when an embedding API key is present (e.g. VDB routing may need it).
-	if cfg.Search.Backend == "" || cfg.Search.Backend == "qdrant" || cfg.Embedding.APIKey != "" {
+	// Embedder and VectorStore are only initialized for the qdrant backend.
+	if cfg.Search.Backend == "qdrant" {
 		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
 		if err == nil {
 			deps.Embedder = embedder
@@ -215,36 +214,39 @@ func runProcess() {
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to initialize embedder: %v\n", err)
 		}
-	}
 
-	// Vector Store
-	// Check for Qdrant env vars or config
-	qURL := cfg.Qdrant.URL
-	if val := os.Getenv("QDRANT_URL"); val != "" && (qURL == "" || qURL == "localhost:6334") {
-		qURL = val
-	}
-
-	qKey := cfg.Qdrant.APIKey
-	if val := os.Getenv("QDRANT_API_KEY"); val != "" && qKey == "" {
-		qKey = val
-	}
-
-	// Only initialize Qdrant if a real URL is configured (not empty, not default localhost)
-	if qURL != "" && qURL != "localhost:6334" {
-		// Log Qdrant connection info (masked key)
-		if verbose {
-			fmt.Printf("Connecting to Qdrant at %s\n", qURL)
+		// Vector Store
+		// Check for Qdrant env vars or config
+		qURL := cfg.Qdrant.URL
+		if val := os.Getenv("QDRANT_URL"); val != "" && (qURL == "" || qURL == "localhost:6334") {
+			qURL = val
 		}
 
-		qdrantClient, err := qdrant.NewClient(qURL, qKey)
-		if err == nil {
-			deps.VectorStore = qdrantClient
+		qKey := cfg.Qdrant.APIKey
+		if val := os.Getenv("QDRANT_API_KEY"); val != "" && qKey == "" {
+			qKey = val
+		}
+
+		// Only initialize Qdrant if a real URL is configured (not empty, not default localhost)
+		if qURL != "" && qURL != "localhost:6334" {
+			if verbose {
+				fmt.Printf("Connecting to Qdrant at %s\n", qURL)
+			}
+
+			qdrantClient, err := qdrant.NewClient(qURL, qKey)
+			if err == nil {
+				deps.VectorStore = qdrantClient
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Qdrant client: %v\n", err)
+			}
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Qdrant client: %v\n", err)
+			if verbose {
+				fmt.Println("Qdrant not configured — skipping vector store initialization")
+			}
 		}
 	} else {
 		if verbose {
-			fmt.Println("Qdrant not configured — skipping vector store initialization")
+			fmt.Printf("Search backend is %q — skipping Embedder and Qdrant initialization\n", cfg.Search.Backend)
 		}
 	}
 
