@@ -57,18 +57,49 @@ Simili-Bot supports both **Single-Repository** and **Organization-wide** setups.
 
 ### AI Provider Configuration
 
-Simili supports both Gemini and OpenAI.
+Simili supports three providers: **GitHub Models** (zero-config), **Gemini**, and **OpenAI**.
 
-- Set at least one key: `GEMINI_API_KEY` or `OPENAI_API_KEY`
-- If both keys are set, Simili uses Gemini by default (Gemini takes precedence)
-- If only one key is set, Simili uses that provider
+#### GitHub Models — zero external key required
+
+`GITHUB_TOKEN` is already present on every Actions runner. When no other AI key is configured, Simili automatically uses the [GitHub Models](https://docs.github.com/en/github-models/quickstart) inference endpoint with it — no extra secrets needed:
+
+```yaml
+# .github/simili.yaml — minimum zero-config setup
+embedding:
+  provider: github_models
+  model: text-embedding-3-small
+
+llm:
+  provider: github_models
+  model: gpt-4o-mini
+```
+
+Or omit the provider entirely — Simili falls back to `github_models` automatically when `GITHUB_TOKEN` is the only credential available.
+
+> **Rate limits:** GitHub Models free tier allows 15 RPM / 150k tokens per day. Sufficient for active repos (50-200 issues/day). For bulk backfill with `simili index`, the built-in retry/backoff handles rate limiting automatically.
+
+#### Gemini / OpenAI — bring your own key
+
+- Set `GEMINI_API_KEY` or `OPENAI_API_KEY` as a repository secret
+- If both are set, Gemini takes precedence
+- The config `provider` field can explicitly pin the provider
+
+Provider resolution order:
+1. Explicit `provider: github_models` in config
+2. `GEMINI_API_KEY` environment variable
+3. `OPENAI_API_KEY` environment variable
+4. Config `api_key` (provider inferred from key prefix)
+5. Zero-config fallback — `GITHUB_TOKEN` with GitHub Models
 
 Default models:
 
-- LLM: `gemini-2.0-flash-lite` (Gemini), `gpt-5.2` (OpenAI)
-- Embeddings: `gemini-embedding-001` (Gemini), `text-embedding-3-small` (OpenAI)
+| Provider | LLM | Embeddings | Embedding dims |
+|---|---|---|---|
+| `github_models` | `gpt-4o-mini` | `text-embedding-3-small` | 1536 |
+| `gemini` | `gemini-2.0-flash-lite` | `gemini-embedding-001` | 3072 |
+| `openai` | `gpt-5.2` | `text-embedding-3-small` | 1536 |
 
-If you override `embedding.model`, keep `embedding.dimensions` aligned with the model:
+If you override `embedding.model`, keep `embedding.dimensions` aligned:
 
 - `gemini-embedding-001` -> `3072`
 - `text-embedding-3-small` -> `1536`
@@ -195,8 +226,22 @@ cat analysis.csv
 
 ## Configuration
 
-Minimal `.github/simili.yaml` example:
+Minimal `.github/simili.yaml` examples:
 
+**Zero-config (GitHub Models — no extra secrets):**
+```yaml
+embedding:
+  provider: github_models
+
+llm:
+  provider: github_models
+
+defaults:
+  similarity_threshold: 0.65
+  max_similar_to_show: 5
+```
+
+**With Qdrant and Gemini:**
 ```yaml
 qdrant:
   url: "${QDRANT_URL}"
@@ -212,7 +257,6 @@ llm:
   provider: "gemini"
   api_key: "${GEMINI_API_KEY}"
   model: "gemini-2.5-flash"
-  # temperature: 0.3
 
 defaults:
   similarity_threshold: 0.65
@@ -220,8 +264,8 @@ defaults:
 ```
 
 Notes:
-- `llm.model` defaults to `gemini-2.5-flash` when omitted.
-- `llm.api_key` can be omitted if `GEMINI_API_KEY` is set.
+- `llm.model` defaults to `gemini-2.5-flash` (Gemini) or `gpt-4o-mini` (GitHub Models) when omitted.
+- `llm.api_key` can be omitted if the corresponding environment variable is set.
 - You can override the model at runtime with `LLM_MODEL`.
 
 ### Search Backends
