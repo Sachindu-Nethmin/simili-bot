@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -259,5 +260,41 @@ func TestGenerateOpenAIText_ExhaustsRetries(t *testing.T) {
 	}
 	if got := calls.Load(); got != 3 {
 		t.Fatalf("expected 3 server calls (1 + 2 retries), got %d", got)
+	}
+}
+
+// ── github_models client tests ─────────────────────────────────────────────
+
+func TestGenerateText_GitHubModels(t *testing.T) {
+	srv, _ := statusServer(
+		[]int{200},
+		func(_ int) []byte { return chatOKBody("response from github models") },
+	)
+	defer srv.Close()
+
+	client := &LLMClient{
+		provider:    ProviderGitHubModels,
+		openAI:      &http.Client{},
+		apiKey:      "ghs_test_token",
+		model:       "gpt-4o-mini",
+		baseURL:     srv.URL,
+		retryConfig: fastRetry,
+	}
+	text, err := client.generateText(context.Background(), "ping", 0.3, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestCallOpenAIJSON_EmptyKeyError(t *testing.T) {
+	err := callOpenAIJSON(context.Background(), nil, "", "", "/v1/test", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for empty API key")
+	}
+	if !strings.Contains(err.Error(), "API key") {
+		t.Errorf("expected error mentioning API key, got: %v", err)
 	}
 }
