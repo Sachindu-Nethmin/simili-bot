@@ -261,3 +261,73 @@ func TestNewEmbedderGitHubModelsFallback(t *testing.T) {
 		t.Fatalf("expected zero-config fallback to %q, got %q", ProviderGitHubModels, embedder.Provider())
 	}
 }
+
+func TestResolveProviderExplicitGeminiHintWinsOverOpenAI(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "gemini-key")
+	t.Setenv("OPENAI_API_KEY", "sk-openai-key")
+
+	// Explicit gemini hint should select Gemini even though both keys are set.
+	provider, key, err := ResolveProvider("", string(ProviderGemini))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if provider != ProviderGemini {
+		t.Fatalf("expected %q, got %q", ProviderGemini, provider)
+	}
+	if key != "gemini-key" {
+		t.Fatalf("expected GEMINI_API_KEY value, got %q", key)
+	}
+}
+
+func TestResolveProviderExplicitOpenAIHintWinsOverGemini(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "gemini-key")
+	t.Setenv("OPENAI_API_KEY", "sk-openai-key")
+
+	// Explicit openai hint should select OpenAI even though GEMINI_API_KEY is set.
+	provider, key, err := ResolveProvider("", string(ProviderOpenAI))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if provider != ProviderOpenAI {
+		t.Fatalf("expected %q, got %q", ProviderOpenAI, provider)
+	}
+	if key != "sk-openai-key" {
+		t.Fatalf("expected OPENAI_API_KEY value, got %q", key)
+	}
+}
+
+func TestResolveProviderExplicitGeminiHintFallsBackToConfigKey(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+
+	provider, key, err := ResolveProvider("config-gemini-key", string(ProviderGemini))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if provider != ProviderGemini {
+		t.Fatalf("expected %q, got %q", ProviderGemini, provider)
+	}
+	if key != "config-gemini-key" {
+		t.Fatalf("expected config api_key, got %q", key)
+	}
+}
+
+func TestResolveProviderExplicitGeminiHintErrorsWhenNoKey(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+
+	_, _, err := ResolveProvider("", string(ProviderGemini))
+	if err == nil {
+		t.Fatal("expected error when gemini is explicitly requested but no key is available")
+	}
+}
+
+func TestResolveProviderExplicitOpenAIHintErrorsWhenNoKey(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+
+	_, _, err := ResolveProvider("", string(ProviderOpenAI))
+	if err == nil {
+		t.Fatal("expected error when openai is explicitly requested but no key is available")
+	}
+}

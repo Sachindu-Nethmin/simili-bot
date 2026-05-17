@@ -30,7 +30,7 @@ const (
 // variables, and the config api_key.
 //
 // Selection order:
-// 1. Explicit hint "github_models" — uses GITHUB_TOKEN (always present in Actions).
+// 1. Explicit hint ("github_models", "gemini", "openai") — short-circuits env priority.
 // 2. GEMINI_API_KEY env var (wins over OPENAI_API_KEY when both are set).
 // 3. OPENAI_API_KEY env var.
 // 4. Config api_key (provider inferred from key prefix).
@@ -41,22 +41,38 @@ func ResolveProvider(apiKey string, providerHint ...string) (Provider, string, e
 		hint = strings.TrimSpace(strings.ToLower(providerHint[0]))
 	}
 
-	// Explicit github_models selection via config provider field.
-	if hint == string(ProviderGitHubModels) {
+	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	openAIKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	configKey := strings.TrimSpace(apiKey)
+
+	// When the caller explicitly names a provider, honour it and skip env priority.
+	switch Provider(hint) {
+	case ProviderGitHubModels:
 		token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 		if token == "" {
 			return "", "", fmt.Errorf("provider %q requires GITHUB_TOKEN to be set", ProviderGitHubModels)
 		}
 		return ProviderGitHubModels, token, nil
+	case ProviderGemini:
+		if geminiKey != "" {
+			return ProviderGemini, geminiKey, nil
+		}
+		if configKey != "" {
+			return ProviderGemini, configKey, nil
+		}
+		return "", "", fmt.Errorf("provider %q requires GEMINI_API_KEY or api_key to be set", ProviderGemini)
+	case ProviderOpenAI:
+		if openAIKey != "" {
+			return ProviderOpenAI, openAIKey, nil
+		}
+		if configKey != "" {
+			return ProviderOpenAI, configKey, nil
+		}
+		return "", "", fmt.Errorf("provider %q requires OPENAI_API_KEY or api_key to be set", ProviderOpenAI)
 	}
 
-	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
-	openAIKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	configKey := strings.TrimSpace(apiKey)
-
+	// No explicit hint — fall back to env-key priority.
 	switch {
-	case geminiKey != "" && openAIKey != "":
-		return ProviderGemini, geminiKey, nil
 	case geminiKey != "":
 		return ProviderGemini, geminiKey, nil
 	case openAIKey != "":

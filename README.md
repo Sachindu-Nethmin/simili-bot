@@ -264,7 +264,7 @@ defaults:
 ```
 
 Notes:
-- `llm.model` defaults to `gemini-2.5-flash` (Gemini) or `gpt-4o-mini` (GitHub Models) when omitted.
+- `llm.model` defaults to `gemini-2.0-flash-lite` (Gemini) or `gpt-4o-mini` (GitHub Models) when omitted.
 - `llm.api_key` can be omitted if the corresponding environment variable is set.
 - You can override the model at runtime with `LLM_MODEL`.
 
