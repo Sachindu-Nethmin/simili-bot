@@ -298,3 +298,81 @@ func TestCallOpenAIJSON_EmptyKeyError(t *testing.T) {
 		t.Errorf("expected error mentioning API key, got: %v", err)
 	}
 }
+
+// TestGitHubModels_PathStripsV1 verifies that callOpenAIJSON strips the /v1
+// prefix when targeting the GitHub Models base URL so calls reach /chat/completions
+// instead of /v1/chat/completions (which returns 404 on that endpoint).
+func TestGitHubModels_PathStripsV1(t *testing.T) {
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(chatOKBody("ok"))
+	}))
+	defer srv.Close()
+
+	// Point gitHubModelsBaseURL at the test server by constructing a client
+	// whose baseURL equals gitHubModelsBaseURL so the stripping logic fires.
+	// We achieve this by temporarily aliasing: call callOpenAIJSON directly
+	// with a baseURL that equals gitHubModelsBaseURL's value but redirect via
+	// the test server instead.
+	//
+	// Because the strip is keyed on the constant string, we exercise it by
+	// using an LLMClient whose baseURL is set to the test server URL and then
+	// calling callOpenAIJSON with the constant directly as baseURL=srvURL and
+	// checking the path the test server received when baseURL == srvURL and the
+	// server URL replaces gitHubModelsBaseURL.
+	//
+	// Simpler: call through the LLMClient.generateOpenAIText path and confirm
+	// the request path reaching the server has no /v1 prefix.
+	client := &LLMClient{
+		provider:    ProviderGitHubModels,
+		openAI:      &http.Client{},
+		apiKey:      "ghs_token",
+		model:       "gpt-4o-mini",
+		baseURL:     gitHubModelsBaseURL, // triggers stripping logic
+		retryConfig: fastRetry,
+	}
+	// Swap in the test server URL so traffic actually hits our handler.
+	client.baseURL = srv.URL
+	// Now manually verify that the strip fires by calling callOpenAIJSON
+	// with baseURL == gitHubModelsBaseURL constant but routing via srv.
+	// We use a fresh http.Client that always hits srv regardless of host.
+	transport := &rewriteTransport{target: srv.URL}
+	err := callOpenAIJSON(
+		context.Background(),
+		&http.Client{Transport: transport},
+		"ghs_token",
+		gitHubModelsBaseURL,
+		"/v1/chat/completions",
+		map[string]string{"model": "gpt-4o-mini"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.HasPrefix(capturedPath, "/v1") {
+		t.Errorf("expected /v1 prefix to be stripped for GitHub Models, got path %q", capturedPath)
+	}
+	if capturedPath != "/chat/completions" {
+		t.Errorf("expected path /chat/completions, got %q", capturedPath)
+	}
+}
+
+// rewriteTransport redirects all requests to a fixed target URL (scheme+host),
+// preserving path and query. Used in tests to intercept calls made to a real
+// host constant (e.g. gitHubModelsBaseURL) without a real network connection.
+type rewriteTransport struct {
+	target string
+}
+
+func (rt *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	newURL := *req.URL
+	newURL.Scheme = "http"
+	newURL.Host = strings.TrimPrefix(strings.TrimPrefix(rt.target, "https://"), "http://")
+	req2 := req.Clone(req.Context())
+	req2.URL = &newURL
+	req2.Host = newURL.Host
+	return http.DefaultTransport.RoundTrip(req2)
+}

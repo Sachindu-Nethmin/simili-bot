@@ -112,6 +112,12 @@ func callOpenAIJSON(ctx context.Context, httpClient *http.Client, apiKey, baseUR
 		baseURL = openAIBaseURL
 	}
 
+	// GitHub Models inference endpoint does not use the /v1 prefix that the
+	// real OpenAI API requires. Strip it so the shared call sites work for both.
+	if baseURL == gitHubModelsBaseURL {
+		endpoint = strings.TrimPrefix(endpoint, "/v1")
+	}
+
 	body, err := json.Marshal(in)
 	if err != nil {
 		return fmt.Errorf("failed to marshal OpenAI request: %w", err)
