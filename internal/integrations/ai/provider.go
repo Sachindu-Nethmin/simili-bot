@@ -16,19 +16,40 @@ import (
 type Provider string
 
 const (
-	ProviderGemini Provider = "gemini"
-	ProviderOpenAI Provider = "openai"
+	ProviderGemini       Provider = "gemini"
+	ProviderOpenAI       Provider = "openai"
+	ProviderGitHubModels Provider = "github_models"
 )
 
-const openAIBaseURL = "https://api.openai.com"
+const (
+	openAIBaseURL       = "https://api.openai.com"
+	gitHubModelsBaseURL = "https://models.inference.ai.azure.com"
+)
 
-// ResolveProvider selects provider/key using environment variables and config key.
+// ResolveProvider selects provider/key using the optional hint, environment
+// variables, and the config api_key.
 //
 // Selection order:
-// 1. If both GEMINI_API_KEY and OPENAI_API_KEY are set, Gemini wins.
-// 2. If only one env key is set, that provider is selected.
-// 3. If no env keys are set, fallback to config api key.
-func ResolveProvider(apiKey string) (Provider, string, error) {
+// 1. Explicit hint "github_models" — uses GITHUB_TOKEN (always present in Actions).
+// 2. GEMINI_API_KEY env var (wins over OPENAI_API_KEY when both are set).
+// 3. OPENAI_API_KEY env var.
+// 4. Config api_key (provider inferred from key prefix).
+// 5. Zero-config fallback — GITHUB_TOKEN present, no other AI key configured.
+func ResolveProvider(apiKey string, providerHint ...string) (Provider, string, error) {
+	hint := ""
+	if len(providerHint) > 0 {
+		hint = strings.TrimSpace(strings.ToLower(providerHint[0]))
+	}
+
+	// Explicit github_models selection via config provider field.
+	if hint == string(ProviderGitHubModels) {
+		token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+		if token == "" {
+			return "", "", fmt.Errorf("provider %q requires GITHUB_TOKEN to be set", ProviderGitHubModels)
+		}
+		return ProviderGitHubModels, token, nil
+	}
+
 	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
 	openAIKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	configKey := strings.TrimSpace(apiKey)
@@ -43,7 +64,11 @@ func ResolveProvider(apiKey string) (Provider, string, error) {
 	case configKey != "":
 		return inferProviderFromKey(configKey), configKey, nil
 	default:
-		return "", "", fmt.Errorf("no AI API key found (set GEMINI_API_KEY or OPENAI_API_KEY)")
+		// Zero-config fallback: GITHUB_TOKEN is always available in Actions runners.
+		if ghToken := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); ghToken != "" {
+			return ProviderGitHubModels, ghToken, nil
+		}
+		return "", "", fmt.Errorf("no AI API key found: set GEMINI_API_KEY, OPENAI_API_KEY, or configure provider: github_models")
 	}
 }
 
@@ -60,7 +85,7 @@ func inferProviderFromKey(apiKey string) Provider {
 // default production URL (useful in tests with httptest servers).
 func callOpenAIJSON(ctx context.Context, httpClient *http.Client, apiKey, baseURL, endpoint string, in, out interface{}) error {
 	if strings.TrimSpace(apiKey) == "" {
-		return fmt.Errorf("OPENAI_API_KEY is required")
+		return fmt.Errorf("an API key or token is required for OpenAI-compatible requests")
 	}
 
 	if httpClient == nil {

@@ -205,7 +205,7 @@ func runProcess() {
 	// Initialize clients with error logging
 	// Embedder and VectorStore are only initialized for the qdrant backend.
 	if cfg.Search.Backend == "qdrant" {
-		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
+		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Provider)
 		if err == nil {
 			deps.Embedder = embedder
 			if verbose {
@@ -279,7 +279,7 @@ func runProcess() {
 	if envModel := os.Getenv("LLM_MODEL"); envModel != "" {
 		llmModel = envModel
 	}
-	llm, err := ai.NewLLMClient(llmKey, llmModel)
+	llm, err := ai.NewLLMClient(llmKey, cfg.LLM.Provider, llmModel)
 	if err == nil {
 		deps.LLMClient = llm
 		if verbose {

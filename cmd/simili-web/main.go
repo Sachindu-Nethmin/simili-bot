@@ -115,7 +115,7 @@ func initDependencies(cfg *config.Config) (*pipeline.Dependencies, error) {
 	}
 
 	// Embedder (Gemini/OpenAI auto-selected by available keys)
-	embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
+	embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init embedder: %w", err)
 	}
@@ -151,7 +151,7 @@ func initDependencies(cfg *config.Config) (*pipeline.Dependencies, error) {
 	if envModel := os.Getenv("LLM_MODEL"); envModel != "" {
 		llmModel = envModel
 	}
-	llm, err := ai.NewLLMClient(llmKey, llmModel)
+	llm, err := ai.NewLLMClient(llmKey, cfg.LLM.Provider, llmModel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init LLM: %w", err)
 	}
