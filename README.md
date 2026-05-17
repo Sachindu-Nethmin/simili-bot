@@ -85,7 +85,7 @@ Or omit the provider entirely — Simili falls back to `github_models` automatic
 - The config `provider` field can explicitly pin the provider
 
 Provider resolution order:
-1. Explicit `provider: github_models` in config
+1. Explicit `provider` in config (`gemini`, `openai`, or `github_models`)
 2. `GEMINI_API_KEY` environment variable
 3. `OPENAI_API_KEY` environment variable
 4. Config `api_key` (provider inferred from key prefix)

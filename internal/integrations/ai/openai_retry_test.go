@@ -299,46 +299,29 @@ func TestCallOpenAIJSON_EmptyKeyError(t *testing.T) {
 	}
 }
 
-// TestGitHubModels_PathStripsV1 verifies that callOpenAIJSON strips the /v1
-// prefix when targeting the GitHub Models base URL so calls reach /chat/completions
-// instead of /v1/chat/completions (which returns 404 on that endpoint).
-func TestGitHubModels_PathStripsV1(t *testing.T) {
-	var capturedPath string
+// capturePathServer returns an httptest.Server whose handler records the
+// request path and responds with the given body function.
+func capturePathServer(t *testing.T, body func() []byte) (*httptest.Server, *string) {
+	t.Helper()
+	var captured string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
+		captured = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(chatOKBody("ok"))
+		if body != nil {
+			_, _ = w.Write(body())
+		}
 	}))
+	return srv, &captured
+}
+
+// TestGitHubModels_ChatPathStripsV1 verifies that callOpenAIJSON strips the /v1
+// prefix for the GitHub Models endpoint so chat calls reach /chat/completions,
+// not /v1/chat/completions (which returns 404 on that endpoint).
+func TestGitHubModels_ChatPathStripsV1(t *testing.T) {
+	srv, capturedPath := capturePathServer(t, func() []byte { return chatOKBody("ok") })
 	defer srv.Close()
 
-	// Point gitHubModelsBaseURL at the test server by constructing a client
-	// whose baseURL equals gitHubModelsBaseURL so the stripping logic fires.
-	// We achieve this by temporarily aliasing: call callOpenAIJSON directly
-	// with a baseURL that equals gitHubModelsBaseURL's value but redirect via
-	// the test server instead.
-	//
-	// Because the strip is keyed on the constant string, we exercise it by
-	// using an LLMClient whose baseURL is set to the test server URL and then
-	// calling callOpenAIJSON with the constant directly as baseURL=srvURL and
-	// checking the path the test server received when baseURL == srvURL and the
-	// server URL replaces gitHubModelsBaseURL.
-	//
-	// Simpler: call through the LLMClient.generateOpenAIText path and confirm
-	// the request path reaching the server has no /v1 prefix.
-	client := &LLMClient{
-		provider:    ProviderGitHubModels,
-		openAI:      &http.Client{},
-		apiKey:      "ghs_token",
-		model:       "gpt-4o-mini",
-		baseURL:     gitHubModelsBaseURL, // triggers stripping logic
-		retryConfig: fastRetry,
-	}
-	// Swap in the test server URL so traffic actually hits our handler.
-	client.baseURL = srv.URL
-	// Now manually verify that the strip fires by calling callOpenAIJSON
-	// with baseURL == gitHubModelsBaseURL constant but routing via srv.
-	// We use a fresh http.Client that always hits srv regardless of host.
 	transport := &rewriteTransport{target: srv.URL}
 	err := callOpenAIJSON(
 		context.Background(),
@@ -352,11 +335,56 @@ func TestGitHubModels_PathStripsV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.HasPrefix(capturedPath, "/v1") {
-		t.Errorf("expected /v1 prefix to be stripped for GitHub Models, got path %q", capturedPath)
+	if *capturedPath != "/chat/completions" {
+		t.Errorf("expected path /chat/completions, got %q", *capturedPath)
 	}
-	if capturedPath != "/chat/completions" {
-		t.Errorf("expected path /chat/completions, got %q", capturedPath)
+}
+
+// TestGitHubModels_EmbeddingsPathStripsV1 verifies that callOpenAIJSON strips the
+// /v1 prefix for the GitHub Models endpoint so embedding calls reach /embeddings,
+// not /v1/embeddings (which returns 404 on that endpoint).
+func TestGitHubModels_EmbeddingsPathStripsV1(t *testing.T) {
+	srv, capturedPath := capturePathServer(t, func() []byte { return embeddingOKBody() })
+	defer srv.Close()
+
+	transport := &rewriteTransport{target: srv.URL}
+	err := callOpenAIJSON(
+		context.Background(),
+		&http.Client{Transport: transport},
+		"ghs_token",
+		gitHubModelsBaseURL,
+		"/v1/embeddings",
+		map[string]string{"model": "text-embedding-3-small"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *capturedPath != "/embeddings" {
+		t.Errorf("expected path /embeddings, got %q", *capturedPath)
+	}
+}
+
+// TestOpenAI_PathKeepsV1 verifies that the /v1 prefix is NOT stripped for the
+// standard OpenAI base URL (only GitHub Models needs the strip).
+func TestOpenAI_PathKeepsV1(t *testing.T) {
+	srv, capturedPath := capturePathServer(t, func() []byte { return chatOKBody("ok") })
+	defer srv.Close()
+
+	err := callOpenAIJSON(
+		context.Background(),
+		&http.Client{},
+		"sk-test",
+		srv.URL, // not gitHubModelsBaseURL — no strip should happen
+		"/v1/chat/completions",
+		map[string]string{"model": "gpt-4o-mini"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *capturedPath != "/v1/chat/completions" {
+		t.Errorf("expected path /v1/chat/completions to be preserved for OpenAI, got %q", *capturedPath)
 	}
 }
 
