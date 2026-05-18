@@ -318,21 +318,21 @@ jobs:
                     command: process
           WFEOF
 
-          # Replace __DOLLAR__ with literal $ so the test repo's workflow
-          # sees real ${{ }} expressions (not interpolated by the outer workflow).
-          sed -i 's|__DOLLAR__|$|g' .github/workflows/triage.yml
-
           # Replace __PR_SHA__ with the actual commit to test
           SHA="${{ github.event.pull_request.head.sha || inputs.sha }}"
           sed -i "s|__PR_SHA__|$SHA|g" .github/workflows/triage.yml
 
           # Inject backend-specific Qdrant env vars
           if [ "${{ matrix.backend }}" = "qdrant" ]; then
-            # Build the literal YAML lines with __DOLLAR__ already replaced above
-            sed -i 's|__QDRANT_ENV_BLOCK__|QDRANT_URL: ${{ secrets.QDRANT_URL }}\n                    QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}|g' .github/workflows/triage.yml
+            # Build the literal YAML lines using __DOLLAR__ to prevent outer interpolation
+            sed -i 's|__QDRANT_ENV_BLOCK__|QDRANT_URL: __DOLLAR__{{ secrets.QDRANT_URL }}\n                    QDRANT_API_KEY: __DOLLAR__{{ secrets.QDRANT_API_KEY }}|g' .github/workflows/triage.yml
           else
             sed -i '/__QDRANT_ENV_BLOCK__/d' .github/workflows/triage.yml
           fi
+
+          # Replace __DOLLAR__ with literal $ so the test repo's workflow
+          # sees real expressions (not interpolated by the outer workflow).
+          sed -i 's|__DOLLAR__|$|g' .github/workflows/triage.yml
 
           git add -A
           git commit -m "chore: enable Simili Triage workflow"

@@ -547,12 +547,27 @@ func TestProcessBatch_WorkerError(t *testing.T) {
 
 	issues := makeIssues(10)
 	results, err := processBatchWithExecutor(context.Background(), issues, &config.Config{}, nil, nil, 2, failingExecutor)
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
 
-	// err may be nil (worker errors are captured in result slots) or non-nil
-	// (context cancellation propagated). Either way results must be present.
-	_ = err
 	if len(results) != len(issues) {
 		t.Fatalf("got %d results, want %d", len(results), len(issues))
+	}
+
+	// Verify the error was captured in the result slot and not silently dropped.
+	var errResult *BatchResult
+	for i := range results {
+		if results[i].Error != nil {
+			errResult = &results[i]
+			break
+		}
+	}
+	if errResult == nil {
+		t.Fatal("expected one result slot to contain the worker error, got none")
+	}
+	if !errors.Is(errResult.Error, wantErr) {
+		t.Errorf("result error = %v, want %v", errResult.Error, wantErr)
 	}
 }
 
