@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -280,12 +281,13 @@ func TestGenerateText_GitHubModels(t *testing.T) {
 		baseURL:     srv.URL,
 		retryConfig: fastRetry,
 	}
+	const expected = "response from github models"
 	text, err := client.generateText(context.Background(), "ping", 0.3, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if text == "" {
-		t.Fatal("expected non-empty response")
+	if text != expected {
+		t.Fatalf("expected %q, got %q", expected, text)
 	}
 }
 
@@ -396,9 +398,22 @@ type rewriteTransport struct {
 }
 
 func (rt *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	target, err := url.Parse(rt.target)
+	if err != nil {
+		return nil, err
+	}
 	newURL := *req.URL
-	newURL.Scheme = "http"
-	newURL.Host = strings.TrimPrefix(strings.TrimPrefix(rt.target, "https://"), "http://")
+	if target.Scheme != "" {
+		newURL.Scheme = target.Scheme
+	} else {
+		newURL.Scheme = "http"
+	}
+	if target.Host != "" {
+		newURL.Host = target.Host
+	} else {
+		// rt.target had no scheme — treat it as a bare host[:port].
+		newURL.Host = strings.TrimPrefix(strings.TrimPrefix(rt.target, "https://"), "http://")
+	}
 	req2 := req.Clone(req.Context())
 	req2.URL = &newURL
 	req2.Host = newURL.Host
