@@ -12,7 +12,7 @@ builds:
       - arm64
 
 changelog:
-  use: github
+  use: git-cliff
   sort: asc
 
 release:
