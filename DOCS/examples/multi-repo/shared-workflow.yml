@@ -34,7 +34,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Simili-Bot
-        uses: similigh/simili-bot@main
+        # Pin to a specific version — update when you want to upgrade
+        uses: similigh/simili-bot@v0.2.3
         with:
           config_path: ${{ inputs.config_path }}
         env:
