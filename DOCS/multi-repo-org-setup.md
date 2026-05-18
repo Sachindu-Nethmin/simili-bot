@@ -30,12 +30,14 @@ Create a `.github/workflows/simili.yml` file in your central repository. This is
 
 Navigate to your Organization Settings > Secrets and variables > Actions. Add the following secrets at the organization level so they are accessible to all repositories:
 
-- `GEMINI_API_KEY`: Optional Gemini API key (takes precedence when both provider keys are set).
-- `OPENAI_API_KEY`: Optional OpenAI API key (used when Gemini key is not set).
+**AI provider — choose one:**
+- No secrets required if using `provider: github_models` — `GITHUB_TOKEN` is injected automatically by Actions.
+- `GEMINI_API_KEY`: Gemini API key (takes precedence when both provider keys are set).
+- `OPENAI_API_KEY`: OpenAI API key (used when Gemini key is not set).
+
+**Vector database (optional — not required for `github_native` or `bm25` backends):**
 - `QDRANT_URL`: URL of your Qdrant instance.
 - `QDRANT_API_KEY`: API key for Qdrant authentication.
-
-You must set at least one of `GEMINI_API_KEY` or `OPENAI_API_KEY`.
 
 ## Step 3: Configure Repositories
 

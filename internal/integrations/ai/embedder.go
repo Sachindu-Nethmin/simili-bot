@@ -34,9 +34,12 @@ type Embedder struct {
 	retryConfig RetryConfig
 }
 
-// NewEmbedder creates a new embedder.
-func NewEmbedder(apiKey, model string) (*Embedder, error) {
-	provider, resolvedKey, err := ResolveProvider(apiKey)
+// NewEmbedder creates a new embedder. An optional providerHint (matching the
+// config embedding.provider field) forces a specific provider — use
+// "github_models" to authenticate with GITHUB_TOKEN and the GitHub Models
+// inference endpoint instead of a paid AI key.
+func NewEmbedder(apiKey, model string, providerHint ...string) (*Embedder, error) {
+	provider, resolvedKey, err := ResolveProvider(apiKey, providerHint...)
 	if err != nil {
 		return nil, err
 	}
@@ -71,6 +74,12 @@ func NewEmbedder(apiKey, model string) (*Embedder, error) {
 		}
 	case ProviderOpenAI:
 		e.openAI = &http.Client{Timeout: 60 * time.Second}
+		if strings.TrimSpace(model) == "" || isLikelyGeminiEmbeddingModel(model) {
+			model = "text-embedding-3-small"
+		}
+	case ProviderGitHubModels:
+		e.openAI = &http.Client{Timeout: 60 * time.Second}
+		e.baseURL = gitHubModelsBaseURL
 		if strings.TrimSpace(model) == "" || isLikelyGeminiEmbeddingModel(model) {
 			model = "text-embedding-3-small"
 		}
@@ -112,7 +121,7 @@ func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	switch e.provider {
 	case ProviderGemini:
 		return e.embedGemini(ctx, text)
-	case ProviderOpenAI:
+	case ProviderOpenAI, ProviderGitHubModels:
 		return e.embedOpenAI(ctx, text)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", e.provider)
@@ -208,7 +217,7 @@ func inferEmbeddingDimensions(provider Provider, model string) int {
 	m := strings.ToLower(strings.TrimSpace(model))
 
 	switch provider {
-	case ProviderOpenAI:
+	case ProviderOpenAI, ProviderGitHubModels:
 		switch {
 		case strings.Contains(m, "text-embedding-3-large"):
 			return 3072

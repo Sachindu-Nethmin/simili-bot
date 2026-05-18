@@ -115,9 +115,12 @@ type DuplicateResult struct {
 	RelatedIssues []RelatedIssueRef `json:"related_issues"` // LLM classification of all candidates
 }
 
-// NewLLMClient creates a new LLM client.
-func NewLLMClient(apiKey string, model ...string) (*LLMClient, error) {
-	provider, resolvedKey, err := ResolveProvider(apiKey)
+// NewLLMClient creates a new LLM client. providerHint matches the config
+// llm.provider field; pass "" to rely on environment-variable auto-detection.
+// Use "github_models" to authenticate with GITHUB_TOKEN and route requests
+// through the GitHub Models inference endpoint (zero external key required).
+func NewLLMClient(apiKey, providerHint string, model ...string) (*LLMClient, error) {
+	provider, resolvedKey, err := ResolveProvider(apiKey, providerHint)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +154,14 @@ func NewLLMClient(apiKey string, model ...string) (*LLMClient, error) {
 			client.model = selectedModel
 		} else {
 			client.model = "gpt-5.2"
+		}
+	case ProviderGitHubModels:
+		client.openAI = &http.Client{Timeout: 60 * time.Second}
+		client.baseURL = gitHubModelsBaseURL
+		if selectedModel != "" {
+			client.model = selectedModel
+		} else {
+			client.model = "gpt-4o-mini"
 		}
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
@@ -335,7 +346,7 @@ func (l *LLMClient) generateText(ctx context.Context, prompt string, temperature
 	switch l.provider {
 	case ProviderGemini:
 		return l.generateGeminiText(ctx, prompt, temperature, jsonMode)
-	case ProviderOpenAI:
+	case ProviderOpenAI, ProviderGitHubModels:
 		return l.generateOpenAIText(ctx, prompt, temperature, jsonMode)
 	default:
 		return "", fmt.Errorf("unsupported provider: %s", l.provider)

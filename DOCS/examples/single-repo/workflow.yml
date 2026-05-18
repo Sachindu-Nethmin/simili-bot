@@ -23,7 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: similigh/simili-bot@main
+      # Pin to a specific version — update when you want to upgrade
+      - uses: similigh/simili-bot@v0.2.3
         id: simili
         with:
           config_path: .github/simili.yaml

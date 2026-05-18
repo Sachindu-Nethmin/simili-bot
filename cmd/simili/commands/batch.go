@@ -105,7 +105,8 @@ func init() {
 }
 
 func runBatch(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 
 	// 1. Load issues from JSON file
 	if verbose {
@@ -142,8 +143,8 @@ func runBatch(cmd *cobra.Command, args []string) {
 			if configToken == "" {
 				return nil, fmt.Errorf("GITHUB_TOKEN required to fetch remote config %s", ref)
 			}
-			ghClient := github.NewClient(context.Background(), configToken)
-			return ghClient.GetFileContent(context.Background(), org, repo, path, branch)
+			ghClient := github.NewClient(ctx, configToken)
+			return ghClient.GetFileContent(ctx, org, repo, path, branch)
 		}
 
 		cfg, err = config.LoadWithInheritance(cfgPath, fetcher)
@@ -183,7 +184,7 @@ func runBatch(cmd *cobra.Command, args []string) {
 	}
 
 	// 5. Initialize dependencies with DryRun=true
-	deps, err := initializeDependencies(cfg)
+	deps, err := initializeDependencies(ctx, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error initializing dependencies: %v\n", err)
 		os.Exit(1)
@@ -289,12 +290,12 @@ func applyConfigOverrides(cfg *config.Config) {
 }
 
 // initializeDependencies initializes all required dependencies for pipeline execution
-func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) {
+func initializeDependencies(ctx context.Context, cfg *config.Config) (*pipeline.Dependencies, error) {
 	deps := &pipeline.Dependencies{}
 
 	// Embedder and VectorStore are only initialized for the qdrant backend.
 	if cfg.Search.Backend == "qdrant" {
-		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model)
+		embedder, err := ai.NewEmbedder(cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Provider)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize embedder: %w", err)
 		}
@@ -342,7 +343,7 @@ func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) 
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 	if token != "" {
-		ghClient := github.NewClient(context.Background(), token)
+		ghClient := github.NewClient(ctx, token)
 		deps.GitHub = ghClient
 		if verbose {
 			fmt.Println("✓ Initialized GitHub client")
@@ -350,7 +351,7 @@ func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) 
 
 		// GitHub Searcher — used by the github_native and bm25 backends.
 		if cfg.Search.Backend == "github_native" || cfg.Search.Backend == "bm25" {
-			deps.GitHubSearcher = github.NewSearcher(context.Background(), token)
+			deps.GitHubSearcher = github.NewSearcher(ctx, token)
 			if verbose {
 				fmt.Printf("✓ Initialized GitHub Searcher (backend: %s)\n", cfg.Search.Backend)
 			}
@@ -368,7 +369,7 @@ func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) 
 	if envModel := os.Getenv("LLM_MODEL"); envModel != "" {
 		llmModel = envModel
 	}
-	llm, err := ai.NewLLMClient(llmKey, llmModel)
+	llm, err := ai.NewLLMClient(llmKey, cfg.LLM.Provider, llmModel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize LLM client: %w", err)
 	}
@@ -380,19 +381,33 @@ func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) 
 	return deps, nil
 }
 
+// batchExecutorFn is the signature of the function that processes a single issue.
+// Extracted so that processBatch can be unit-tested without real network calls.
+type batchExecutorFn func(ctx context.Context, issue *pipeline.Issue, cfg *config.Config, deps *pipeline.Dependencies, stepNames []string, silent bool) (*pipeline.Result, error)
+
 // processBatch processes all issues using a worker pool pattern.
 // Uses errgroup so that a panicking or early-exiting worker cancels the shared
 // context, unblocks the job sender, and guarantees g.Wait() always returns.
 // Returns the first worker/panic error alongside the (possibly partial) results.
 func processBatch(ctx context.Context, issues []pipeline.Issue, cfg *config.Config, deps *pipeline.Dependencies, stepNames []string) ([]BatchResult, error) {
+	return processBatchWithExecutor(ctx, issues, cfg, deps, stepNames, batchWorkers, ExecutePipeline)
+}
+
+// processBatchWithExecutor is the testable core of processBatch.
+// Callers (including tests) supply numWorkers and the executor so the function
+// has no hidden global-state dependencies — safe for parallel test execution.
+func processBatchWithExecutor(ctx context.Context, issues []pipeline.Issue, cfg *config.Config, deps *pipeline.Dependencies, stepNames []string, numWorkers int, executor batchExecutorFn) ([]BatchResult, error) {
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
 	// Buffer all results up front; workers never block on send.
 	results := make(chan BatchResult, len(issues))
-	jobs := make(chan BatchJob, batchWorkers)
+	jobs := make(chan BatchJob, numWorkers)
 
 	g, gctx := errgroup.WithContext(ctx)
 
 	// Workers: retErr is set by the deferred recover so errgroup sees panics.
-	for i := 0; i < batchWorkers; i++ {
+	for i := 0; i < numWorkers; i++ {
 		workerID := i
 		g.Go(func() (retErr error) {
 			defer func() {
@@ -405,7 +420,7 @@ func processBatch(ctx context.Context, issues []pipeline.Issue, cfg *config.Conf
 					fmt.Printf("[Worker %d] Processing issue #%d (%s/%s)\n", workerID, job.Issue.Number, job.Issue.Org, job.Issue.Repo)
 				}
 
-				result, err := ExecutePipeline(gctx, &job.Issue, cfg, deps, stepNames, true)
+				result, err := executor(gctx, &job.Issue, cfg, deps, stepNames, true)
 
 				// results is buffered to len(issues) so this send never blocks.
 				results <- BatchResult{Index: job.Index, Issue: job.Issue, Result: result, Error: err}

@@ -1,7 +1,7 @@
 // Author: Kaviru Hapuarachchi
 // GitHub: https://github.com/Kavirubc
 // Created: 2026-02-02
-// Last Modified: 2026-02-02
+// Last Modified: 2026-05-18
 
 // Package state provides a GitHub API-based implementation of GitStateManager.
 package state
@@ -14,7 +14,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
+
+const githubRequestTimeout = 30 * time.Second
 
 // GitHubStateManager implements GitStateManager using the GitHub API.
 // It reads/writes files to a dedicated orphan branch without local checkout.
@@ -33,7 +36,7 @@ func NewGitHubStateManager(token, org, repo string) *GitHubStateManager {
 		org:        org,
 		repo:       repo,
 		branch:     DefaultStateBranch,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: githubRequestTimeout},
 	}
 }
 

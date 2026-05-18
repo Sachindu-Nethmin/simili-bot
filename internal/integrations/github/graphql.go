@@ -1,7 +1,7 @@
 // Author: Kaviru Hapuarachchi
 // GitHub: https://github.com/Kavirubc
 // Created: 2026-02-04
-// Last Modified: 2026-02-04
+// Last Modified: 2026-05-18
 
 package github
 
@@ -12,7 +12,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
+
+const graphqlRequestTimeout = 30 * time.Second
 
 const graphQLEndpoint = "https://api.github.com/graphql"
 
@@ -25,7 +28,7 @@ type GraphQLClient struct {
 // NewGraphQLClient creates a new GraphQL client with the given token.
 func NewGraphQLClient(httpClient *http.Client, token string) *GraphQLClient {
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = &http.Client{Timeout: graphqlRequestTimeout}
 	}
 	return &GraphQLClient{
 		httpClient: httpClient,

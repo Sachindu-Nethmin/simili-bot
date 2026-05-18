@@ -12,7 +12,7 @@ builds:
       - arm64
 
 changelog:
-  use: github
+  use: git-cliff
   sort: asc
 
 release:
@@ -32,7 +32,7 @@ release:
     ```yaml
     - uses: similigh/simili-bot@{{ .Tag }}
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        github_token: ${{ "{{" }} secrets.GITHUB_TOKEN {{ "}}" }}
     ```
 
     **CLI** — download the binary for your platform from the assets below, or install via Go:

@@ -16,26 +16,63 @@ import (
 type Provider string
 
 const (
-	ProviderGemini Provider = "gemini"
-	ProviderOpenAI Provider = "openai"
+	ProviderGemini       Provider = "gemini"
+	ProviderOpenAI       Provider = "openai"
+	ProviderGitHubModels Provider = "github_models"
 )
 
-const openAIBaseURL = "https://api.openai.com"
+const (
+	openAIBaseURL       = "https://api.openai.com"
+	gitHubModelsBaseURL = "https://models.inference.ai.azure.com"
+)
 
-// ResolveProvider selects provider/key using environment variables and config key.
+// ResolveProvider selects provider/key using the optional hint, environment
+// variables, and the config api_key.
 //
 // Selection order:
-// 1. If both GEMINI_API_KEY and OPENAI_API_KEY are set, Gemini wins.
-// 2. If only one env key is set, that provider is selected.
-// 3. If no env keys are set, fallback to config api key.
-func ResolveProvider(apiKey string) (Provider, string, error) {
+// 1. Explicit hint ("github_models", "gemini", "openai") — short-circuits env priority.
+// 2. GEMINI_API_KEY env var (wins over OPENAI_API_KEY when both are set).
+// 3. OPENAI_API_KEY env var.
+// 4. Config api_key (provider inferred from key prefix).
+// 5. Zero-config fallback — GITHUB_TOKEN present, no other AI key configured.
+func ResolveProvider(apiKey string, providerHint ...string) (Provider, string, error) {
+	hint := ""
+	if len(providerHint) > 0 {
+		hint = strings.TrimSpace(strings.ToLower(providerHint[0]))
+	}
+
 	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
 	openAIKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	configKey := strings.TrimSpace(apiKey)
 
+	// When the caller explicitly names a provider, honour it and skip env priority.
+	switch Provider(hint) {
+	case ProviderGitHubModels:
+		token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+		if token == "" {
+			return "", "", fmt.Errorf("provider %q requires GITHUB_TOKEN to be set", ProviderGitHubModels)
+		}
+		return ProviderGitHubModels, token, nil
+	case ProviderGemini:
+		if geminiKey != "" {
+			return ProviderGemini, geminiKey, nil
+		}
+		if configKey != "" {
+			return ProviderGemini, configKey, nil
+		}
+		return "", "", fmt.Errorf("provider %q requires GEMINI_API_KEY or api_key to be set", ProviderGemini)
+	case ProviderOpenAI:
+		if openAIKey != "" {
+			return ProviderOpenAI, openAIKey, nil
+		}
+		if configKey != "" {
+			return ProviderOpenAI, configKey, nil
+		}
+		return "", "", fmt.Errorf("provider %q requires OPENAI_API_KEY or api_key to be set", ProviderOpenAI)
+	}
+
+	// No explicit hint — fall back to env-key priority.
 	switch {
-	case geminiKey != "" && openAIKey != "":
-		return ProviderGemini, geminiKey, nil
 	case geminiKey != "":
 		return ProviderGemini, geminiKey, nil
 	case openAIKey != "":
@@ -43,7 +80,11 @@ func ResolveProvider(apiKey string) (Provider, string, error) {
 	case configKey != "":
 		return inferProviderFromKey(configKey), configKey, nil
 	default:
-		return "", "", fmt.Errorf("no AI API key found (set GEMINI_API_KEY or OPENAI_API_KEY)")
+		// Zero-config fallback: GITHUB_TOKEN is always available in Actions runners.
+		if ghToken := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); ghToken != "" {
+			return ProviderGitHubModels, ghToken, nil
+		}
+		return "", "", fmt.Errorf("no AI API key found: set GEMINI_API_KEY, OPENAI_API_KEY, or configure provider: github_models")
 	}
 }
 
@@ -60,7 +101,7 @@ func inferProviderFromKey(apiKey string) Provider {
 // default production URL (useful in tests with httptest servers).
 func callOpenAIJSON(ctx context.Context, httpClient *http.Client, apiKey, baseURL, endpoint string, in, out interface{}) error {
 	if strings.TrimSpace(apiKey) == "" {
-		return fmt.Errorf("OPENAI_API_KEY is required")
+		return fmt.Errorf("an API key or token is required for OpenAI-compatible requests")
 	}
 
 	if httpClient == nil {
@@ -69,6 +110,12 @@ func callOpenAIJSON(ctx context.Context, httpClient *http.Client, apiKey, baseUR
 
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = openAIBaseURL
+	}
+
+	// GitHub Models inference endpoint does not use the /v1 prefix that the
+	// real OpenAI API requires. Strip it so the shared call sites work for both.
+	if baseURL == gitHubModelsBaseURL {
+		endpoint = strings.TrimPrefix(endpoint, "/v1")
 	}
 
 	body, err := json.Marshal(in)
