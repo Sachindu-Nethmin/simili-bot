@@ -1,7 +1,7 @@
 // Author: Kaviru Hapuarachchi
 // GitHub: https://github.com/Kavirubc
 // Created: 2026-02-02
-// Last Modified: 2026-02-13
+// Last Modified: 2026-05-18
 
 package commands
 
@@ -67,7 +67,8 @@ func init() {
 }
 
 func runIndex(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
 	// 1. Load Config
 	cfgPath := similiConfig.FindConfigPath(cfgFile)

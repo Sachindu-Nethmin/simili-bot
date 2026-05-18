@@ -105,7 +105,8 @@ func init() {
 }
 
 func runBatch(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 
 	// 1. Load issues from JSON file
 	if verbose {
@@ -142,8 +143,8 @@ func runBatch(cmd *cobra.Command, args []string) {
 			if configToken == "" {
 				return nil, fmt.Errorf("GITHUB_TOKEN required to fetch remote config %s", ref)
 			}
-			ghClient := github.NewClient(context.Background(), configToken)
-			return ghClient.GetFileContent(context.Background(), org, repo, path, branch)
+			ghClient := github.NewClient(ctx, configToken)
+			return ghClient.GetFileContent(ctx, org, repo, path, branch)
 		}
 
 		cfg, err = config.LoadWithInheritance(cfgPath, fetcher)
@@ -183,7 +184,7 @@ func runBatch(cmd *cobra.Command, args []string) {
 	}
 
 	// 5. Initialize dependencies with DryRun=true
-	deps, err := initializeDependencies(cfg)
+	deps, err := initializeDependencies(ctx, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error initializing dependencies: %v\n", err)
 		os.Exit(1)
@@ -289,7 +290,7 @@ func applyConfigOverrides(cfg *config.Config) {
 }
 
 // initializeDependencies initializes all required dependencies for pipeline execution
-func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) {
+func initializeDependencies(ctx context.Context, cfg *config.Config) (*pipeline.Dependencies, error) {
 	deps := &pipeline.Dependencies{}
 
 	// Embedder and VectorStore are only initialized for the qdrant backend.
@@ -342,7 +343,7 @@ func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) 
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 	if token != "" {
-		ghClient := github.NewClient(context.Background(), token)
+		ghClient := github.NewClient(ctx, token)
 		deps.GitHub = ghClient
 		if verbose {
 			fmt.Println("✓ Initialized GitHub client")
@@ -350,7 +351,7 @@ func initializeDependencies(cfg *config.Config) (*pipeline.Dependencies, error) 
 
 		// GitHub Searcher — used by the github_native and bm25 backends.
 		if cfg.Search.Backend == "github_native" || cfg.Search.Backend == "bm25" {
-			deps.GitHubSearcher = github.NewSearcher(context.Background(), token)
+			deps.GitHubSearcher = github.NewSearcher(ctx, token)
 			if verbose {
 				fmt.Printf("✓ Initialized GitHub Searcher (backend: %s)\n", cfg.Search.Backend)
 			}

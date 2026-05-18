@@ -1,7 +1,7 @@
 // Author: Kaviru Hapuarachchi
 // GitHub: https://github.com/kavirubc
 // Created: 2026-03-05
-// Last Modified: 2026-03-06
+// Last Modified: 2026-05-18
 
 package commands
 
@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	similiConfig "github.com/similigh/simili-bot/internal/core/config"
@@ -84,7 +85,8 @@ func init() {
 }
 
 func runPRDuplicate(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// 1. Parse repo.
 	repoParts := strings.SplitN(prDupRepo, "/", 2)
