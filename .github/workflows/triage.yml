@@ -17,6 +17,10 @@ concurrency:
   group: simili-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
+concurrency:
+  group: simili-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
